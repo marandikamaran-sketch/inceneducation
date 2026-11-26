@@ -1,0 +1,1741 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="description" content="EduVision AR Pro — Media Pembelajaran Spasial 2D Interaktif bergaya Apple VisionOS untuk siswa SD kelas 1-6." />
+  <title>EduVision AR Pro — Media Pembelajaran Spasial SD</title>
+
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- Google Fonts: Fredoka (Ramah Anak) & Inter (UI VisionOS) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+  <!-- MediaPipe Hands CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+
+  <style>
+    :root {
+      --glass-border: rgba(255, 255, 255, 0.28);
+    }
+
+    * {
+      box-sizing: border-box;
+      -webkit-tap-highlight-color: transparent;
+      user-select: none;
+    }
+
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      font-family: 'Inter', sans-serif;
+      background: #090d1e;
+      color: #ffffff;
+      touch-action: none;
+    }
+
+    .font-kids {
+      font-family: 'Fredoka', 'Inter', sans-serif;
+    }
+
+    /* Apple VisionOS Spatial Glassmorphism */
+    .vision-glass {
+      background: linear-gradient(135deg, rgba(255, 255, 255, 0.20) 0%, rgba(255, 255, 255, 0.08) 100%);
+      backdrop-filter: blur(22px) saturate(165%);
+      -webkit-backdrop-filter: blur(22px) saturate(165%);
+      border: 1.5px solid var(--glass-border);
+      box-shadow:
+        0 10px 32px rgba(0, 0, 0, 0.34),
+        inset 0 1px 1px rgba(255, 255, 255, 0.45);
+    }
+
+    .vision-glass-dark {
+      background: linear-gradient(145deg, rgba(14, 20, 40, 0.80) 0%, rgba(10, 14, 30, 0.72) 100%);
+      backdrop-filter: blur(28px) saturate(155%);
+      -webkit-backdrop-filter: blur(28px) saturate(155%);
+      border: 1.5px solid rgba(255, 255, 255, 0.24);
+      box-shadow:
+        0 20px 60px rgba(0, 0, 0, 0.58),
+        inset 0 1px 1px rgba(255, 255, 255, 0.30);
+    }
+
+    .vision-btn {
+      transition: transform 0.18s cubic-bezier(0.22, 1, 0.36, 1), background 0.2s, box-shadow 0.2s;
+    }
+    .vision-btn:hover {
+      transform: translateY(-2px) scale(1.02);
+    }
+    .vision-btn:active {
+      transform: scale(0.96);
+    }
+
+    /* Mirrored Webcam Video */
+    #webcamVideo {
+      position: fixed;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      transform: scaleX(-1);
+      z-index: 1;
+      opacity: 0;
+      transition: opacity 0.6s ease;
+    }
+    #webcamVideo.active {
+      opacity: 1;
+    }
+
+    /* 60fps Spatial 2D AR Canvas */
+    #arCanvas {
+      position: fixed;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 2;
+      display: block;
+      cursor: grab;
+    }
+    #arCanvas:active {
+      cursor: grabbing;
+    }
+
+    /* HUD Overlay Layer */
+    #hudLayer {
+      position: fixed;
+      inset: 0;
+      z-index: 10;
+      pointer-events: none;
+    }
+    #hudLayer .interactive {
+      pointer-events: auto;
+    }
+
+    /* Custom Scrollbar */
+    .custom-scroll::-webkit-scrollbar {
+      width: 6px;
+    }
+    .custom-scroll::-webkit-scrollbar-track {
+      background: rgba(255, 255, 255, 0.06);
+      border-radius: 999px;
+    }
+    .custom-scroll::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.28);
+      border-radius: 999px;
+    }
+
+    @keyframes pulseGlow {
+      0%, 100% { box-shadow: 0 0 18px rgba(56, 189, 248, 0.45); }
+      50% { box-shadow: 0 0 32px rgba(56, 189, 248, 0.85); }
+    }
+    .pulse-glow {
+      animation: pulseGlow 2.4s infinite ease-in-out;
+    }
+
+    @keyframes popIn {
+      0% { opacity: 0; transform: scale(0.92) translateY(12px); }
+      100% { opacity: 1; transform: scale(1) translateY(0); }
+    }
+    .pop-in {
+      animation: popIn 0.32s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Background Mirrored Webcam Feed -->
+  <video id="webcamVideo" playsinline autoplay muted aria-label="Tampilan Kamera AR"></video>
+
+  <!-- Main 2D Spatial AR Canvas -->
+  <canvas id="arCanvas" aria-label="Kanvas Pembelajaran Interaktif EduVision AR Pro"></canvas>
+
+  <!-- HUD Overlay Layer -->
+  <div id="hudLayer" class="flex flex-col justify-between p-2 sm:p-4">
+
+    <!-- Top Control Bar -->
+    <header class="w-full flex flex-wrap items-center justify-between gap-2">
+      <!-- Left: Brand & Python Engine Status -->
+      <div class="flex items-center gap-1.5 sm:gap-2 interactive">
+        <button id="btnMenu" title="Kembali ke Menu Utama" class="vision-glass vision-btn flex items-center gap-1.5 px-3 py-2 rounded-full text-xs sm:text-sm font-semibold">
+          <span class="text-base sm:text-lg leading-none">🥽</span>
+          <span class="font-kids tracking-wide hidden sm:inline">EduVision Pro</span>
+        </button>
+
+        <!-- Pyodide Status Badge -->
+        <button id="btnPythonModal" title="Inspeksi Mesin Python Adaptif" class="vision-glass vision-btn flex items-center gap-1.5 px-2.5 sm:px-3 py-2 rounded-full text-[11px] sm:text-xs font-medium">
+          <span id="pyStatusDot" class="w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse"></span>
+          <span id="pyStatusText">Python...</span>
+        </button>
+
+        <!-- Theme Switcher Button -->
+        <button id="btnCycleTheme" title="Ganti Dunia Tema Virtual" class="vision-glass vision-btn flex items-center gap-1.5 px-2.5 sm:px-3 py-2 rounded-full text-[11px] sm:text-xs font-medium">
+          <span id="themeIcon">🌌</span>
+          <span id="themeLabel" class="hidden md:inline">Luar Angkasa</span>
+        </button>
+      </div>
+
+      <!-- Right: Controls -->
+      <nav class="flex items-center gap-1.5 interactive" aria-label="Kontrol Permainan">
+        <button id="btnToggleCamera" class="vision-glass vision-btn px-2.5 sm:px-3 py-2 rounded-full text-xs font-medium flex items-center gap-1.5" title="Ganti Kamera AR / Dunia Virtual">
+          <span id="camIcon">📷</span>
+          <span id="camLabel" class="hidden lg:inline">Kamera AR</span>
+        </button>
+
+        <button id="btnSpeakQ" class="vision-glass vision-btn px-2.5 sm:px-3 py-2 rounded-full text-xs font-medium hidden items-center gap-1" title="Baca Soal Sekarang">
+          <span>🗣️</span>
+          <span class="hidden lg:inline">Baca</span>
+        </button>
+
+        <button id="btnHint" class="vision-glass vision-btn px-2.5 sm:px-3 py-2 rounded-full text-xs font-medium hidden items-center gap-1" title="Petunjuk & Pembahasan">
+          <span>💡</span>
+          <span class="hidden md:inline">Petunjuk</span>
+        </button>
+
+        <button id="btnSettings" class="vision-glass vision-btn px-2.5 py-2 rounded-full text-xs font-medium" title="Pengaturan Sensitivitas & Magnet">
+          ⚙️
+        </button>
+
+        <button id="btnRaporTop" class="vision-glass vision-btn px-2.5 py-2 rounded-full text-xs font-medium" title="Lihat Rapor Mini & Riwayat">
+          📊
+        </button>
+
+        <button id="btnSound" class="vision-glass vision-btn px-2.5 py-2 rounded-full text-xs font-medium" title="Suara & Pembaca Otomatis">
+          <span id="soundIcon">🔊</span>
+        </button>
+
+        <button id="btnReset" class="vision-glass vision-btn px-2.5 py-2 rounded-full text-xs font-medium hidden" title="Ulangi Ronde">
+          🔄
+        </button>
+      </nav>
+    </header>
+
+    <!-- In-Game Question & Score Panels -->
+    <main id="gameplayHud" class="w-full flex-1 flex flex-col justify-start mt-2 hidden">
+      <!-- Single-Screen & Classification HUD -->
+      <section id="singleHud" class="w-full max-w-2xl mx-auto hidden">
+        <div class="vision-glass-dark rounded-3xl px-4 py-3 sm:px-6 sm:py-4 text-center relative">
+          <div class="flex flex-wrap items-center justify-between gap-1 text-[11px] sm:text-xs text-sky-200 mb-1.5">
+            <span id="s1Progress" class="font-semibold bg-white/10 px-2.5 py-0.5 rounded-full">Soal 1 / 5</span>
+            <span id="s1Combo" class="font-bold text-emerald-300 bg-emerald-500/20 px-2.5 py-0.5 rounded-full hidden">🔥 Combo x2</span>
+            <span id="s1Level" class="font-semibold bg-indigo-500/30 border border-indigo-300/30 px-2.5 py-0.5 rounded-full">Level 1</span>
+            <span id="s1Score" class="font-bold text-amber-300 bg-amber-500/20 px-2.5 py-0.5 rounded-full">⭐ 0</span>
+          </div>
+          <!-- Progress Bar -->
+          <div class="w-full h-1.5 bg-white/15 rounded-full overflow-hidden mb-2">
+            <div id="s1ProgressBar" class="h-full bg-gradient-to-r from-sky-400 via-indigo-400 to-emerald-400 transition-all duration-500" style="width: 20%"></div>
+          </div>
+          <h2 id="s1Question" class="font-kids text-base sm:text-2xl font-bold text-white leading-snug drop-shadow">
+            Memuat soal...
+          </h2>
+          <p id="s1SubHint" class="text-[11px] sm:text-xs text-sky-200/90 mt-1">
+            Cubit / seret gelembung jawaban ke dalam Portal!
+          </p>
+        </div>
+      </section>
+
+      <!-- Split-Screen Duel HUD (2 Players) -->
+      <section id="splitHud" class="w-full grid grid-cols-2 gap-2 sm:gap-4 hidden">
+        <!-- Player 1 (Left - Blue) -->
+        <div class="vision-glass-dark rounded-2xl sm:rounded-3xl p-2.5 sm:p-4 border-sky-400/50 text-center">
+          <div class="flex items-center justify-between text-[10px] sm:text-xs mb-1">
+            <span class="font-bold text-sky-300">🔵 P1</span>
+            <span id="p1Progress" class="bg-white/10 px-2 py-0.5 rounded-full">1/5</span>
+            <span id="p1Score" class="font-bold text-amber-300">⭐ 0</span>
+          </div>
+          <h2 id="p1Question" class="font-kids text-xs sm:text-lg font-bold text-white leading-tight">
+            Memuat soal P1...
+          </h2>
+        </div>
+
+        <!-- Player 2 (Right - Orange) -->
+        <div class="vision-glass-dark rounded-2xl sm:rounded-3xl p-2.5 sm:p-4 border-orange-400/50 text-center">
+          <div class="flex items-center justify-between text-[10px] sm:text-xs mb-1">
+            <span class="font-bold text-orange-300">🟠 P2</span>
+            <span id="p2Progress" class="bg-white/10 px-2 py-0.5 rounded-full">1/5</span>
+            <span id="p2Score" class="font-bold text-amber-300">⭐ 0</span>
+          </div>
+          <h2 id="p2Question" class="font-kids text-xs sm:text-lg font-bold text-white leading-tight">
+            Memuat soal P2...
+          </h2>
+        </div>
+      </section>
+    </main>
+
+    <!-- Bottom Feedback Toast & Gesture Guide -->
+    <footer class="w-full flex flex-col items-center gap-1.5 pb-1">
+      <div id="toastBanner" role="status" aria-live="polite" class="vision-glass-dark px-4 sm:px-5 py-2 rounded-full text-xs sm:text-sm font-semibold text-center opacity-0 transition-opacity duration-300 max-w-xl">
+        Siap bermain!
+      </div>
+      <div class="vision-glass px-3.5 py-1.5 rounded-full text-[10px] sm:text-xs text-white/90 flex items-center gap-2.5">
+        <span>🤏 <b>Cubit udara</b> (ibu jari + telunjuk)</span>
+        <span class="opacity-40">|</span>
+        <span>🧲 Magnet: <b id="magnetBadge">Aktif</b></span>
+        <span class="hidden sm:inline opacity-40">|</span>
+        <span class="hidden sm:inline">🖱️ / 👆 Mouse & Sentuh</span>
+      </div>
+    </footer>
+  </div>
+
+  <!-- LOBBY / START MODAL -->
+  <div id="lobbyModal" class="fixed inset-0 z-30 flex items-center justify-center p-3 sm:p-5 bg-slate-950/60 backdrop-blur-md">
+    <div class="vision-glass-dark pop-in w-full max-w-2xl rounded-[2rem] p-5 sm:p-7 max-h-[94vh] overflow-y-auto custom-scroll">
+      <div class="text-center mb-4">
+        <div class="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-gradient-to-br from-sky-400 via-indigo-500 to-fuchsia-500 shadow-lg mb-2 text-3xl">
+          🥽
+        </div>
+        <h1 class="font-kids text-2xl sm:text-3xl font-bold bg-gradient-to-r from-sky-300 via-white to-amber-200 bg-clip-text text-transparent">
+          EduVision AR Pro
+        </h1>
+        <p class="text-xs sm:text-sm text-slate-300 mt-0.5">
+          Media Pembelajaran Spasial 2D Interaktif SD Kelas 1–6
+        </p>
+      </div>
+
+      <!-- 1. Jenjang Kelas -->
+      <div class="mb-3.5">
+        <label class="block text-[11px] font-bold uppercase tracking-wider text-sky-300 mb-1.5">1. Pilih Jenjang Kelas</label>
+        <div class="grid grid-cols-3 gap-2">
+          <button data-grade="1-2" class="grade-btn vision-btn rounded-2xl py-2 px-2 text-center border border-sky-400 bg-sky-500/30 font-semibold text-xs sm:text-sm">
+            <div class="text-base sm:text-lg">🐣</div>
+            <div>Kelas 1–2</div>
+          </button>
+          <button data-grade="3-4" class="grade-btn vision-btn rounded-2xl py-2 px-2 text-center border border-white/20 bg-white/10 font-semibold text-xs sm:text-sm">
+            <div class="text-base sm:text-lg">🚀</div>
+            <div>Kelas 3–4</div>
+          </button>
+          <button data-grade="5-6" class="grade-btn vision-btn rounded-2xl py-2 px-2 text-center border border-white/20 bg-white/10 font-semibold text-xs sm:text-sm">
+            <div class="text-base sm:text-lg">🪐</div>
+            <div>Kelas 5–6</div>
+          </button>
+        </div>
+      </div>
+
+      <!-- 2. Mata Pelajaran -->
+      <div class="mb-3.5">
+        <label class="block text-[11px] font-bold uppercase tracking-wider text-sky-300 mb-1.5">2. Pilih Mata Pelajaran</label>
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
+          <button data-subject="matematika" class="subject-btn vision-btn rounded-2xl py-2 px-2 text-center border border-white/20 bg-white/10 font-semibold text-xs">
+            🔢 Matematika
+          </button>
+          <button data-subject="ipa" class="subject-btn vision-btn rounded-2xl py-2 px-2 text-center border border-white/20 bg-white/10 font-semibold text-xs">
+            🌿 IPA Sains
+          </button>
+          <button data-subject="inggris" class="subject-btn vision-btn rounded-2xl py-2 px-2 text-center border border-white/20 bg-white/10 font-semibold text-xs">
+            🇬🇧 B. Inggris
+          </button>
+          <button data-subject="campuran" class="subject-btn vision-btn rounded-2xl py-2 px-2 text-center border border-sky-400 bg-sky-500/30 font-semibold text-xs">
+            ✨ Campuran
+          </button>
+        </div>
+      </div>
+
+      <!-- 3. Mode Permainan & Layar -->
+      <div class="mb-3.5">
+        <label class="block text-[11px] font-bold uppercase tracking-wider text-sky-300 mb-1.5">3. Pilih Mode Permainan</label>
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
+          <button data-mode="single" class="mode-btn vision-btn rounded-2xl p-2.5 text-left border border-sky-400 bg-sky-500/30">
+            <div class="font-bold text-xs sm:text-sm">👤 Single-Screen</div>
+            <div class="text-[11px] text-slate-200 mt-0.5">1 Anak, 1 Portal Jawaban</div>
+          </button>
+          <button data-mode="split" class="mode-btn vision-btn rounded-2xl p-2.5 text-left border border-white/20 bg-white/10">
+            <div class="font-bold text-xs sm:text-sm">👥 Split-Screen Duel</div>
+            <div class="text-[11px] text-slate-200 mt-0.5">2 Anak berlomba (Kiri vs Kanan)</div>
+          </button>
+          <button data-mode="classify" class="mode-btn vision-btn rounded-2xl p-2.5 text-left border border-white/20 bg-white/10">
+            <div class="font-bold text-xs sm:text-sm">🗂️ Mode Klasifikasi</div>
+            <div class="text-[11px] text-slate-200 mt-0.5">Pilah objek ke 2 Portal Kategori</div>
+          </button>
+        </div>
+      </div>
+
+      <!-- 4. Dunia Tema Virtual -->
+      <div class="mb-5">
+        <label class="block text-[11px] font-bold uppercase tracking-wider text-sky-300 mb-1.5">4. Pilih Dunia Tema (Mode Virtual)</label>
+        <div class="grid grid-cols-3 gap-2">
+          <button data-theme="space" class="theme-btn vision-btn rounded-2xl py-2 px-2 text-center border border-sky-400 bg-sky-500/30 font-semibold text-xs">
+            🌌 Luar Angkasa
+          </button>
+          <button data-theme="ocean" class="theme-btn vision-btn rounded-2xl py-2 px-2 text-center border border-white/20 bg-white/10 font-semibold text-xs">
+            🐠 Bawah Laut
+          </button>
+          <button data-theme="forest" class="theme-btn vision-btn rounded-2xl py-2 px-2 text-center border border-white/20 bg-white/10 font-semibold text-xs">
+            🧚 Hutan Ajaib
+          </button>
+        </div>
+      </div>
+
+      <!-- Tombol Mulai -->
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+        <button id="btnStartCamera" class="vision-btn pulse-glow w-full py-3.5 px-4 rounded-2xl bg-gradient-to-r from-sky-500 to-indigo-600 font-kids font-bold text-base shadow-lg flex items-center justify-center gap-2">
+          <span>📷</span> Mulai dengan Kamera AR
+        </button>
+        <button id="btnStartVirtual" class="vision-btn w-full py-3.5 px-4 rounded-2xl bg-white/15 hover:bg-white/25 border border-white/25 font-kids font-bold text-base flex items-center justify-center gap-2">
+          <span>🌌</span> Mulai Dunia Virtual 2D
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- SETTINGS MODAL (Sensitivitas Cubitan & Magnet Assist) -->
+  <div id="settingsModal" class="fixed inset-0 z-50 hidden items-center justify-center p-4 bg-slate-950/65 backdrop-blur-md">
+    <div class="vision-glass-dark pop-in w-full max-w-md rounded-[2rem] p-5 sm:p-6">
+      <div class="flex items-center justify-between mb-4">
+        <h3 class="font-kids text-lg font-bold flex items-center gap-2">⚙️ Pengaturan Kontrol Spasial</h3>
+        <button id="btnCloseSettings" class="vision-btn w-8 h-8 rounded-full bg-white/15 hover:bg-white/25 flex items-center justify-center font-bold">✕</button>
+      </div>
+
+      <div class="space-y-4">
+        <!-- Magnet Assist Toggle -->
+        <div class="flex items-center justify-between bg-white/10 rounded-2xl p-3.5">
+          <div>
+            <div class="font-semibold text-sm">🧲 Magnet Assist</div>
+            <div class="text-xs text-slate-300">Bantu anak SD menangkap gelembung terdekat</div>
+          </div>
+          <button id="btnToggleMagnet" class="px-3.5 py-1.5 rounded-full text-xs font-bold bg-emerald-500 text-white">AKTIF</button>
+        </div>
+
+        <!-- Pinch Sensitivity Slider -->
+        <div class="bg-white/10 rounded-2xl p-3.5">
+          <div class="flex items-center justify-between mb-1.5">
+            <label for="pinchSlider" class="font-semibold text-sm">🤏 Sensitivitas Cubitan</label>
+            <span id="pinchValLabel" class="text-xs font-bold text-sky-300">Normal (52px)</span>
+          </div>
+          <input id="pinchSlider" type="range" min="32" max="85" value="52" class="w-full accent-sky-400 cursor-pointer" />
+          <div class="flex justify-between text-[10px] text-slate-300 mt-1">
+            <span>Ketat (32px)</span>
+            <span>Sangat Mudah (85px)</span>
+          </div>
+        </div>
+
+        <!-- Hand Skeleton Toggle -->
+        <div class="flex items-center justify-between bg-white/10 rounded-2xl p-3.5">
+          <div>
+            <div class="font-semibold text-sm">🖐️ Kerangka Tangan Hologram</div>
+            <div class="text-xs text-slate-300">Tampilkan garis tangan VisionOS di layar</div>
+          </div>
+          <button id="btnToggleSkeleton" class="px-3.5 py-1.5 rounded-full text-xs font-bold bg-emerald-500 text-white">AKTIF</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- RAPOR MINI & EVALUATION MODAL -->
+  <div id="evalModal" class="fixed inset-0 z-40 hidden items-center justify-center p-4 bg-slate-950/70 backdrop-blur-md">
+    <div class="vision-glass-dark pop-in w-full max-w-lg rounded-[2rem] p-5 sm:p-6 text-center max-h-[92vh] overflow-y-auto custom-scroll">
+      <div class="flex justify-end">
+        <button id="btnCloseEval" class="vision-btn w-8 h-8 rounded-full bg-white/15 hover:bg-white/25 flex items-center justify-center font-bold text-xs">✕</button>
+      </div>
+      <div id="evalStars" class="text-4xl sm:text-5xl mb-1 tracking-widest">⭐⭐⭐</div>
+      <h2 id="evalTitle" class="font-kids text-2xl sm:text-3xl font-bold text-white">Rapor Mini Belajar</h2>
+      <p id="evalSubtitle" class="text-xs sm:text-sm text-sky-200 mt-0.5">Ringkasan performa sesi terakhir</p>
+
+      <!-- 4 Metric Cards -->
+      <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 my-4">
+        <div class="bg-white/10 rounded-2xl p-2.5">
+          <div class="text-[11px] text-slate-300">Skor</div>
+          <div id="evalScore" class="font-kids text-xl font-bold text-amber-300">0</div>
+        </div>
+        <div class="bg-white/10 rounded-2xl p-2.5">
+          <div class="text-[11px] text-slate-300">Akurasi</div>
+          <div id="evalAccuracy" class="font-kids text-xl font-bold text-emerald-300">0%</div>
+        </div>
+        <div class="bg-white/10 rounded-2xl p-2.5">
+          <div class="text-[11px] text-slate-300">Reaksi</div>
+          <div id="evalReaction" class="font-kids text-xl font-bold text-sky-300">0.0d</div>
+        </div>
+        <div class="bg-white/10 rounded-2xl p-2.5">
+          <div class="text-[11px] text-slate-300">Level</div>
+          <div id="evalLevel" class="font-kids text-xl font-bold text-fuchsia-300">Lv 1</div>
+        </div>
+      </div>
+
+      <!-- Python Pedagogical Recommendation -->
+      <div class="bg-indigo-950/60 border border-indigo-400/35 rounded-2xl p-3.5 text-left mb-4">
+        <div class="text-[11px] font-bold uppercase tracking-wider text-indigo-300 mb-1 flex items-center gap-1.5">
+          <span>🐍</span> Analisis Mesin Python Adaptif
+        </div>
+        <p id="evalRecommendation" class="text-xs sm:text-sm text-slate-100 leading-relaxed">
+          Belum ada sesi selesai. Mulai bermain untuk melihat analisis belajarmu!
+        </p>
+      </div>
+
+      <!-- Saved History (localStorage) -->
+      <div class="bg-slate-950/50 border border-white/15 rounded-2xl p-3 text-left mb-4">
+        <div class="flex items-center justify-between mb-2">
+          <span class="text-xs font-bold text-sky-300">📜 Riwayat Rapor Tersimpan</span>
+          <button id="btnClearHistory" class="text-[11px] text-rose-300 hover:underline">Hapus Riwayat</button>
+        </div>
+        <div id="raporHistoryList" class="space-y-1.5 max-h-32 overflow-y-auto custom-scroll text-xs text-slate-200">
+          <div class="text-slate-400 italic">Belum ada riwayat tersimpan.</div>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-2 gap-2.5">
+        <button id="btnPlayAgain" class="vision-btn py-3 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-500 font-kids font-bold text-sm sm:text-base">
+          🔄 Main Lagi
+        </button>
+        <button id="btnBackLobby" class="vision-btn py-3 rounded-2xl bg-white/15 border border-white/25 font-kids font-bold text-sm sm:text-base">
+          🏠 Menu Utama
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- PYTHON ENGINE INSPECTOR MODAL -->
+  <div id="pythonModal" class="fixed inset-0 z-50 hidden items-center justify-center p-4 bg-slate-950/70 backdrop-blur-md">
+    <div class="vision-glass-dark pop-in w-full max-w-3xl rounded-[2rem] p-5 sm:p-6 max-h-[88vh] flex flex-col">
+      <div class="flex items-center justify-between mb-3">
+        <div class="flex items-center gap-2">
+          <span class="text-2xl">🐍</span>
+          <div>
+            <h3 class="font-kids text-base sm:text-lg font-bold">Mesin Pembelajaran Adaptif (Python / Pyodide)</h3>
+            <p id="pyModalEngineInfo" class="text-xs text-sky-300">Status: Memuat runtime Pyodide WebAssembly...</p>
+          </div>
+        </div>
+        <button id="btnClosePython" class="vision-btn w-9 h-9 rounded-full bg-white/15 hover:bg-white/25 flex items-center justify-center font-bold">✕</button>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-3 flex-1 overflow-hidden">
+        <div class="flex flex-col overflow-hidden bg-slate-950/75 border border-white/15 rounded-2xl p-3">
+          <div class="text-xs font-semibold text-emerald-300 mb-1.5">adaptive_engine.py (Aktif)</div>
+          <pre id="pyCodeView" class="text-[11px] leading-relaxed text-slate-200 overflow-auto custom-scroll flex-1 font-mono"></pre>
+        </div>
+
+        <div class="flex flex-col overflow-hidden bg-slate-950/75 border border-white/15 rounded-2xl p-3">
+          <div class="text-xs font-semibold text-amber-300 mb-1.5">Log Eksekusi DDA & Generator Soal</div>
+          <div id="pyLogView" class="text-[11px] leading-relaxed text-sky-100 overflow-auto custom-scroll flex-1 font-mono space-y-1.5"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Pyodide CDN (Asynchronous so UI loads instantly) -->
+  <script src="https://cdn.jsdelivr.net/pyodide/v0.26.4/full/pyodide.js" async></script>
+
+  <script>
+    /*************************************************************************
+     * 1. PYTHON ADAPTIVE LEARNING ENGINE (DDA + MULTI-SUBJECT + CLASSIFY)
+     *************************************************************************/
+    const PYTHON_ENGINE_CODE = `
+import random
+import json
+
+class AdaptiveLearningEngine:
+    def __init__(self):
+        self.states = {
+            "p1": self._new_state(),
+            "p2": self._new_state()
+        }
+        self.ipa_bank = {
+            "1-2": [
+                {"q": "Hewan manakah yang bisa terbang?", "ans": "Burung", "emoji": "🐦", "opts": [("Kucing","🐱"),("Ikan","🐟"),("Sapi","🐄")], "hint": "Hewan ini punya sayap dan bulu.", "exp": "Burung memiliki sayap untuk terbang di udara."},
+                {"q": "Hewan yang hidup di air dan bernapas dengan insang?", "ans": "Ikan", "emoji": "🐟", "opts": [("Ayam","🐔"),("Kelinci","🐰"),("Bebek","🦆")], "hint": "Berenang di kolam atau laut.", "exp": "Ikan bernapas menggunakan insang di dalam air."},
+                {"q": "Buah berwarna kuning & melengkung?", "ans": "Pisang", "emoji": "🍌", "opts": [("Semangka","🍉"),("Anggur","🍇"),("Apel","🍎")], "hint": "Disukai monyet dan kulitnya bisa dikupas.", "exp": "Pisang berwarna kuning saat matang dan kaya kalium."},
+                {"q": "Hewan pemakan wortel bertelinga panjang?", "ans": "Kelinci", "emoji": "🐰", "opts": [("Harimau","🐯"),("Gajah","🐘"),("Katak","🐸")], "hint": "Jalannya melompat-lompat lucu.", "exp": "Kelinci adalah hewan herbivora yang suka wortel."}
+            ],
+            "3-4": [
+                {"q": "Bagian tumbuhan yang menyerap air dari tanah?", "ans": "Akar", "emoji": "🌱", "opts": [("Daun","🍃"),("Bunga","🌸"),("Buah","🍎")], "hint": "Letaknya berada di dalam tanah.", "exp": "Akar menyerap air dan mineral serta menopang tumbuhan."},
+                {"q": "Proses tumbuhan membuat makanan dengan matahari?", "ans": "Fotosintesis", "emoji": "☀️", "opts": [("Respirasi","💨"),("Adaptasi","🦎"),("Erosi","⛰️")], "hint": "Terjadi di daun hijau saat siang hari.", "exp": "Fotosintesis mengubah air & CO2 menjadi makanan dengan cahaya matahari."},
+                {"q": "Hewan pemakan tumbuhan disebut?", "ans": "Herbivora", "emoji": "🐄", "opts": [("Karnivora","🦁"),("Omnivora","🐻"),("Insektivora","🐸")], "hint": "Contohnya sapi, kambing, dan kelinci.", "exp": "Herbivora adalah kelompok hewan pemakan tumbuhan."},
+                {"q": "Wujud benda yang bentuknya mengikuti wadahnya?", "ans": "Cair", "emoji": "💧", "opts": [("Padat","🪨"),("Besi","🔩"),("Kayu","🪵")], "hint": "Contohnya air minum dan susu.", "exp": "Benda cair memiliki volume tetap namun bentuk mengikuti wadah."}
+            ],
+            "5-6": [
+                {"q": "Planet terbesar di Tata Surya kita?", "ans": "Jupiter", "emoji": "🪐", "opts": [("Mars","🔴"),("Bumi","🌍"),("Merkurius","🌑")], "hint": "Planet gas raksasa urutan kelima.", "exp": "Jupiter adalah planet terbesar di Tata Surya."},
+                {"q": "Gaya yang menarik benda jatuh ke bawah?", "ans": "Gravitasi", "emoji": "🍎", "opts": [("Gesek","🛷"),("Magnet","🧲"),("Pegas","🌀")], "hint": "Membuat buah apel jatuh ke tanah.", "exp": "Gravitasi Bumi menarik semua benda menuju pusat Bumi."},
+                {"q": "Planet yang dijuluki Planet Merah?", "ans": "Mars", "emoji": "🔴", "opts": [("Venus","🌕"),("Saturnus","🪐"),("Neptunus","🔵")], "hint": "Permukaannya kaya debu besi kemerahan.", "exp": "Mars tampak merah karena oksida besi di permukaannya."},
+                {"q": "Pusat Tata Surya yang memancarkan cahaya sendiri?", "ans": "Matahari", "emoji": "☀️", "opts": [("Bulan","🌙"),("Bumi","🌍"),("Komet","☄️")], "hint": "Merupakan bintang terdekat dari Bumi.", "exp": "Matahari adalah bintang pusat Tata Surya."}
+            ]
+        }
+        self.eng_bank = {
+            "1-2": [
+                {"q": "Apa bahasa Inggris dari 'Apel'?", "ans": "Apple", "emoji": "🍎", "opts": [("Banana","🍌"),("Cat","🐱"),("Book","📘")], "hint": "Diawali huruf A.", "exp": "Apple artinya Apel."},
+                {"q": "Apa bahasa Inggris dari 'Kucing'?", "ans": "Cat", "emoji": "🐱", "opts": [("Dog","🐶"),("Fish","🐟"),("Bird","🐦")], "hint": "Hewan yang mengeong, 3 huruf.", "exp": "Cat artinya Kucing."},
+                {"q": "Apa bahasa Inggris dari warna 'Biru'?", "ans": "Blue", "emoji": "🔵", "opts": [("Red","🔴"),("Green","🟢"),("Yellow","🟡")], "hint": "Warna langit cerah.", "exp": "Blue artinya Biru."},
+                {"q": "Apa bahasa Inggris dari angka 'Lima'?", "ans": "Five", "emoji": "🖐️", "opts": [("Two","✌️"),("Three","3️⃣"),("Nine","9️⃣")], "hint": "One, two, three, four, ...", "exp": "Five artinya Lima."}
+            ],
+            "3-4": [
+                {"q": "What is the English word for 'Sekolah'?", "ans": "School", "emoji": "🏫", "opts": [("House","🏠"),("Market","🏪"),("Park","🌳")], "hint": "Tempat kita belajar bersama guru.", "exp": "School artinya Sekolah."},
+                {"q": "What is the English word for 'Perpustakaan'?", "ans": "Library", "emoji": "📚", "opts": [("Kitchen","🍳"),("Garden","🌻"),("Office","🏢")], "hint": "Tempat meminjam banyak buku.", "exp": "Library artinya Perpustakaan."},
+                {"q": "Lawan kata (opposite) dari 'Big' adalah?", "ans": "Small", "emoji": "🐭", "opts": [("Tall","🦒"),("Fast","⚡"),("Hot","🔥")], "hint": "Big artinya besar, lawannya kecil.", "exp": "Small artinya kecil, lawan kata dari Big."}
+            ],
+            "5-6": [
+                {"q": "Choose the correct verb: 'She ___ to school every day.'", "ans": "goes", "emoji": "🎒", "opts": [("go","🚶"),("going","🏃"),("went","⏪")], "hint": "Simple Present untuk subjek 'She' ditambah -es.", "exp": "Untuk subjek She/He/It pada Simple Present, go menjadi goes."},
+                {"q": "What is the past tense of 'Eat'?", "ans": "Ate", "emoji": "🍽️", "opts": [("Eated","❌"),("Eating","🍲"),("Eats","🥗")], "hint": "Irregular verb, 3 huruf.", "exp": "Bentuk lampau (Verb 2) dari Eat adalah Ate."},
+                {"q": "Meaning of 'Environment' in Indonesian?", "ans": "Lingkungan", "emoji": "🌍", "opts": [("Pekerjaan","💼"),("Perjalanan","✈️"),("Makanan","🍱")], "hint": "Alam dan sekitar tempat kita tinggal.", "exp": "Environment artinya Lingkungan."}
+            ]
+        }
+        self.classify_bank = {
+            "1-2": [
+                {"title": "Pilah Angka: GENAP vs GANJIL!", "left": "GENAP", "right": "GANJIL", "hint": "Genap bisa dibagi 2 (2,4,6,8). Ganjil bersisa 1 (1,3,5,7).",
+                 "items": [("2","2️⃣","left"),("4","4️⃣","left"),("3","3️⃣","right"),("5","5️⃣","right")]},
+                {"title": "Pilah: HEWAN vs BUAH!", "left": "HEWAN", "right": "BUAH", "hint": "Hewan bisa bergerak, buah tumbuh di pohon.",
+                 "items": [("Kucing","🐱","left"),("Ikan","🐟","left"),("Apel","🍎","right"),("Pisang","🍌","right")]}
+            ],
+            "3-4": [
+                {"title": "Pilah: HERBIVORA vs KARNIVORA!", "left": "HERBIVORA", "right": "KARNIVORA", "hint": "Herbivora pemakan tumbuhan, Karnivora pemakan daging.",
+                 "items": [("Sapi","🐄","left"),("Kelinci","🐰","left"),("Singa","🦁","right"),("Elang","🦅","right")]},
+                {"title": "Pilah Wujud: PADAT vs CAIR!", "left": "PADAT", "right": "CAIR", "hint": "Padat bentuknya tetap, Cair mengalir mengikuti wadah.",
+                 "items": [("Batu","🪨","left"),("Buku","📘","left"),("Air","💧","right"),("Susu","🥛","right")]}
+            ],
+            "5-6": [
+                {"title": "Pilah: PLANET DALAM vs PLANET LUAR!", "left": "DALAM", "right": "LUAR", "hint": "Planet dalam berbatu (Merkurius-Mars), luar raksasa gas (Jupiter-Neptunus).",
+                 "items": [("Bumi","🌍","left"),("Mars","🔴","left"),("Jupiter","🪐","right"),("Neptunus","🔵","right")]},
+                {"title": "English Sort: NOUN (Benda) vs VERB (Kerja)!", "left": "NOUN", "right": "VERB", "hint": "Noun adalah kata benda, Verb adalah kata kerja/aksi.",
+                 "items": [("Book","📘","left"),("Apple","🍎","left"),("Run","🏃","right"),("Read","📖","right")]}
+            ]
+        }
+
+    def _new_state(self):
+        return {"level": 1, "streak": 0, "correct": 0, "attempts": 0, "score": 0, "total_time": 0.0}
+
+    def reset_player(self, pid):
+        self.states[pid] = self._new_state()
+        return json.dumps(self.states[pid])
+
+    def generate_classify(self, pid, grade):
+        st = self.states[pid]
+        bank = self.classify_bank.get(grade, self.classify_bank["1-2"])
+        item = random.choice(bank)
+        objs = [{"text": t, "emoji": e, "target": side} for (t, e, side) in item["items"]]
+        random.shuffle(objs)
+        return json.dumps({
+            "type": "classify",
+            "question": item["title"],
+            "left_label": item["left"],
+            "right_label": item["right"],
+            "hint": item["hint"],
+            "items": objs,
+            "level": st["level"]
+        })
+
+    def generate_question(self, pid, grade, subject):
+        st = self.states[pid]
+        lvl = st["level"]
+        chosen = subject
+        if subject == "campuran":
+            chosen = random.choice(["matematika", "ipa", "inggris"])
+
+        if chosen == "ipa":
+            item = random.choice(self.ipa_bank.get(grade, self.ipa_bank["1-2"]))
+            opts = [{"text": item["ans"], "emoji": item["emoji"], "correct": True}]
+            for txt, emj in item["opts"]:
+                opts.append({"text": txt, "emoji": emj, "correct": False})
+            random.shuffle(opts)
+            return json.dumps({"type": "quiz", "question": item["q"], "hint": item["hint"], "exp": item["exp"], "options": opts, "level": lvl, "subject": "IPA"})
+
+        if chosen == "inggris":
+            item = random.choice(self.eng_bank.get(grade, self.eng_bank["1-2"]))
+            opts = [{"text": item["ans"], "emoji": item["emoji"], "correct": True}]
+            for txt, emj in item["opts"]:
+                opts.append({"text": txt, "emoji": emj, "correct": False})
+            random.shuffle(opts)
+            return json.dumps({"type": "quiz", "question": item["q"], "hint": item["hint"], "exp": item["exp"], "options": opts, "level": lvl, "subject": "B. Inggris"})
+
+        # Matematika Prosedural Adaptif (Level 1-3)
+        if grade == "1-2":
+            max_n = 5 + lvl * 4
+            a, b = random.randint(1, max_n), random.randint(1, max_n)
+            if random.random() < 0.65:
+                ans, q_text = a + b, f"Berapakah hasil dari {a} + {b} ?"
+                hint, exp = f"Hitung maju dari {a} sebanyak {b}.", f"{a} ditambah {b} sama dengan {ans}."
+            else:
+                if a < b: a, b = b, a
+                ans, q_text = a - b, f"Berapakah hasil dari {a} - {b} ?"
+                hint, exp = f"Hitung mundur dari {a} sebanyak {b}.", f"{a} dikurangi {b} sama dengan {ans}."
+        elif grade == "3-4":
+            if random.random() < 0.6:
+                a, b = random.randint(2, 4 + lvl * 2), random.randint(2, 5 + lvl * 2)
+                ans, q_text = a * b, f"Berapakah hasil dari {a} × {b} ?"
+                hint, exp = f"Jumlahkan angka {a} sebanyak {b} kali.", f"{a} dikali {b} hasilnya {ans}."
+            else:
+                b, ans = random.randint(2, 3 + lvl * 2), random.randint(2, 4 + lvl * 2)
+                a = b * ans
+                q_text = f"Berapakah hasil dari {a} ÷ {b} ?"
+                hint, exp = f"Angka berapa jika dikali {b} hasilnya {a}?", f"{a} dibagi {b} sama dengan {ans}."
+        else:
+            if random.random() < 0.55:
+                a, b, c = random.randint(3, 6 + lvl * 2), random.randint(2, 4 + lvl), random.randint(2, 10)
+                ans, q_text = a * b + c, f"Hitunglah: ({a} × {b}) + {c} = ?"
+                hint, exp = f"Kerjakan {a} × {b} dulu, lalu tambah {c}.", f"{a}×{b}={a*b}, ditambah {c} menjadi {ans}."
+            else:
+                base, pct = random.choice([20, 40, 60, 80, 100]), random.choice([25, 50])
+                ans, q_text = int(base * pct / 100), f"Berapakah {pct}% dari {base} ?"
+                hint, exp = f"50% itu setengah, 25% itu seperempat dari {base}.", f"{pct}% dari {base} adalah {ans}."
+
+        wrong_set = set()
+        while len(wrong_set) < 3:
+            cand = max(0, ans + random.choice([-4, -3, -2, -1, 1, 2, 3, 4, 5]))
+            if cand != ans:
+                wrong_set.add(cand)
+        emojis = ["🎈", "🌟", "💎", "🍀"]
+        random.shuffle(emojis)
+        opts = [{"text": str(ans), "emoji": emojis[0], "correct": True}]
+        for i, w in enumerate(wrong_set):
+            opts.append({"text": str(w), "emoji": emojis[i + 1], "correct": False})
+        random.shuffle(opts)
+        return json.dumps({"type": "quiz", "question": q_text, "hint": hint, "exp": exp, "options": opts, "level": lvl, "subject": "Matematika"})
+
+    def record_answer(self, pid, is_correct, response_sec):
+        st = self.states[pid]
+        st["attempts"] += 1
+        st["total_time"] += response_sec
+        level_up = False
+        if is_correct:
+            st["correct"] += 1
+            st["streak"] += 1
+            combo_bonus = min(60, (st["streak"] - 1) * 15)
+            speed_bonus = 25 if response_sec < 5.5 else 10
+            st["score"] += (100 * st["level"]) + speed_bonus + combo_bonus
+            if st["streak"] >= 2 and st["level"] < 3:
+                st["level"] += 1
+                level_up = True
+                feedback = f"Hebat! Combo {st['streak']}x — Naik ke Level {st['level']}!"
+            else:
+                feedback = f"Benar! +{100*st['level']+speed_bonus+combo_bonus} poin 🎉"
+        else:
+            st["streak"] = 0
+            if st["level"] > 1:
+                st["level"] -= 1
+            feedback = "Belum tepat, yuk coba lagi!"
+
+        acc = round((st["correct"] / max(1, st["attempts"])) * 100)
+        return json.dumps({"state": st, "accuracy": acc, "feedback": feedback, "level_up": level_up})
+
+    def get_summary(self, pid, grade, subject):
+        st = self.states[pid]
+        acc = round((st["correct"] / max(1, st["attempts"])) * 100)
+        avg_t = round(st["total_time"] / max(1, st["attempts"]), 1)
+        if acc >= 85:
+            stars = 3
+            rec = f"Penguasaan luar biasa pada {subject.upper()} Kelas {grade}! Akurasi {acc}% dengan rata-rata reaksi {avg_t} detik di Level {st['level']}."
+        elif acc >= 60:
+            stars = 2
+            rec = f"Bagus sekali! Akurasi {acc}% (reaksi {avg_t}d). Latih sedikit lagi soal Level {st['level']} agar makin lancar."
+        else:
+            stars = 1
+            rec = f"Semangat terus! Akurasi {acc}%. Manfaatkan tombol Petunjuk (💡) dan ulangi perlahan untuk memperkuat pemahaman."
+        return json.dumps({"score": st["score"], "accuracy": acc, "avg_time": avg_t, "level": st["level"], "stars": stars, "recommendation": rec})
+
+engine = AdaptiveLearningEngine()
+`;
+
+    /*************************************************************************
+     * 2. PYODIDE BRIDGE + INSTANT IDENTICAL JS FALLBACK
+     *************************************************************************/
+    const PyBridge = {
+      pyodide: null,
+      ready: false,
+      logs: [],
+      fb: {
+        p1: { level: 1, streak: 0, correct: 0, attempts: 0, score: 0, total_time: 0 },
+        p2: { level: 1, streak: 0, correct: 0, attempts: 0, score: 0, total_time: 0 }
+      },
+      banks: {
+        ipa: {
+          "1-2": [{ q: "Hewan manakah yang bisa terbang?", ans: "Burung", emoji: "🐦", opts: [["Kucing","🐱"],["Ikan","🐟"],["Sapi","🐄"]], hint: "Punya sayap dan bulu.", exp: "Burung terbang dengan sayap." }],
+          "3-4": [{ q: "Bagian tumbuhan yang menyerap air?", ans: "Akar", emoji: "🌱", opts: [["Daun","🍃"],["Bunga","🌸"],["Buah","🍎"]], hint: "Ada di dalam tanah.", exp: "Akar menyerap air dari tanah." }],
+          "5-6": [{ q: "Planet terbesar di Tata Surya?", ans: "Jupiter", emoji: "🪐", opts: [["Mars","🔴"],["Bumi","🌍"],["Merkurius","🌑"]], hint: "Planet gas raksasa ke-5.", exp: "Jupiter adalah planet terbesar." }]
+        },
+        inggris: {
+          "1-2": [{ q: "Apa bahasa Inggris dari 'Apel'?", ans: "Apple", emoji: "🍎", opts: [["Banana","🍌"],["Cat","🐱"],["Book","📘"]], hint: "Diawali huruf A.", exp: "Apple artinya Apel." }],
+          "3-4": [{ q: "English word for 'Sekolah'?", ans: "School", emoji: "🏫", opts: [["House","🏠"],["Market","🏪"],["Park","🌳"]], hint: "Tempat belajar bersama guru.", exp: "School artinya Sekolah." }],
+          "5-6": [{ q: "Past tense of 'Eat' is?", ans: "Ate", emoji: "🍽️", opts: [["Eated","❌"],["Eating","🍲"],["Eats","🥗"]], hint: "Irregular verb, 3 huruf.", exp: "Verb 2 dari Eat adalah Ate." }]
+        },
+        classify: {
+          "1-2": { title: "Pilah Angka: GENAP vs GANJIL!", left: "GENAP", right: "GANJIL", hint: "Genap: 2,4,6. Ganjil: 1,3,5.", items: [["2","2️⃣","left"],["4","4️⃣","left"],["3","3️⃣","right"],["5","5️⃣","right"]] },
+          "3-4": { title: "Pilah: HERBIVORA vs KARNIVORA!", left: "HERBIVORA", right: "KARNIVORA", hint: "Herbivora makan tumbuhan, Karnivora makan daging.", items: [["Sapi","🐄","left"],["Kelinci","🐰","left"],["Singa","🦁","right"],["Elang","🦅","right"]] },
+          "5-6": { title: "Pilah: PLANET DALAM vs LUAR!", left: "DALAM", right: "LUAR", hint: "Bumi & Mars planet dalam; Jupiter & Neptunus planet luar.", items: [["Bumi","🌍","left"],["Mars","🔴","left"],["Jupiter","🪐","right"],["Neptunus","🔵","right"]] }
+        }
+      },
+
+      log(msg) {
+        const t = new Date().toLocaleTimeString('id-ID', { hour12: false });
+        this.logs.unshift(`[${t}] ${msg}`);
+        if (this.logs.length > 45) this.logs.pop();
+        const el = document.getElementById('pyLogView');
+        if (el) el.innerHTML = this.logs.map(l => `<div class="border-b border-white/10 pb-1">${l}</div>`).join('');
+      },
+
+      async init() {
+        document.getElementById('pyCodeView').textContent = PYTHON_ENGINE_CODE.trim();
+        this.log("Memuat Pyodide (Python 3 WebAssembly) secara asinkron...");
+        let tries = 0;
+        while (typeof loadPyodide === 'undefined' && tries < 60) {
+          await new Promise(r => setTimeout(r, 300));
+          tries++;
+        }
+        if (typeof loadPyodide === 'undefined') {
+          this.setBadge("JS Fallback", "bg-sky-400");
+          this.log("Pyodide CDN tidak terjangkau — Menggunakan JS Fallback identik.");
+          return;
+        }
+        try {
+          this.pyodide = await loadPyodide();
+          await this.pyodide.runPythonAsync(PYTHON_ENGINE_CODE);
+          this.ready = true;
+          this.setBadge("Python Aktif", "bg-emerald-400");
+          document.getElementById('pyModalEngineInfo').textContent = "Status: Pyodide Python 3 Aktif (WebAssembly)";
+          this.log("✅ Pyodide siap! AdaptiveLearningEngine aktif.");
+        } catch (err) {
+          this.setBadge("JS Fallback", "bg-sky-400");
+          document.getElementById('pyModalEngineInfo').textContent = "Status: Fallback JS Aktif";
+          this.log("⚠️ Pyodide gagal dimuat: " + err.message);
+        }
+      },
+
+      setBadge(text, colorClass) {
+        document.getElementById('pyStatusText').textContent = text;
+        document.getElementById('pyStatusDot').className = `w-2.5 h-2.5 rounded-full ${colorClass}`;
+      },
+
+      resetPlayer(pid) {
+        if (this.ready) {
+          this.pyodide.runPython(`engine.reset_player("${pid}")`);
+          this.log(`Python -> reset_player("${pid}")`);
+        } else {
+          this.fb[pid] = { level: 1, streak: 0, correct: 0, attempts: 0, score: 0, total_time: 0 };
+        }
+      },
+
+      generateClassify(pid, grade) {
+        if (this.ready) {
+          const res = JSON.parse(this.pyodide.runPython(`engine.generate_classify("${pid}", "${grade}")`));
+          this.log(`Python -> generate_classify(${pid}, ${grade}) => ${res.left_label} vs ${res.right_label}`);
+          return res;
+        }
+        const c = this.banks.classify[grade] || this.banks.classify["1-2"];
+        const items = c.items.map(([text, emoji, target]) => ({ text, emoji, target })).sort(() => Math.random() - 0.5);
+        return { type: "classify", question: c.title, left_label: c.left, right_label: c.right, hint: c.hint, items, level: this.fb[pid].level };
+      },
+
+      generateQuestion(pid, grade, subject) {
+        if (this.ready) {
+          const res = JSON.parse(this.pyodide.runPython(`engine.generate_question("${pid}", "${grade}", "${subject}")`));
+          this.log(`Python -> generate_question(${pid}, ${grade}, ${subject}) => Lv.${res.level} [${res.subject}]`);
+          return res;
+        }
+        const st = this.fb[pid];
+        const chosen = subject === "campuran" ? ["matematika", "ipa", "inggris"][Math.floor(Math.random() * 3)] : subject;
+        if (chosen === "ipa" || chosen === "inggris") {
+          const item = (this.banks[chosen][grade] || this.banks[chosen]["1-2"])[0];
+          const opts = [{ text: item.ans, emoji: item.emoji, correct: true }, ...item.opts.map(o => ({ text: o[0], emoji: o[1], correct: false }))].sort(() => Math.random() - 0.5);
+          return { type: "quiz", question: item.q, hint: item.hint, exp: item.exp, options: opts, level: st.level, subject: chosen.toUpperCase() };
+        }
+        const a = 2 + Math.floor(Math.random() * (4 + st.level * 3));
+        const b = 1 + Math.floor(Math.random() * (4 + st.level * 2));
+        const ans = grade === "1-2" ? a + b : a * b;
+        const q = grade === "1-2" ? `Berapakah hasil dari ${a} + ${b} ?` : `Berapakah hasil dari ${a} × ${b} ?`;
+        const wrongs = new Set();
+        while (wrongs.size < 3) {
+          const cand = Math.max(0, ans + [-3, -2, -1, 1, 2, 3][Math.floor(Math.random() * 6)]);
+          if (cand !== ans) wrongs.add(cand);
+        }
+        const opts = [{ text: String(ans), emoji: "🌟", correct: true }, ...[...wrongs].map(w => ({ text: String(w), emoji: "🎈", correct: false }))].sort(() => Math.random() - 0.5);
+        return { type: "quiz", question: q, hint: "Hitung perlahan ya!", exp: `Hasilnya adalah ${ans}.`, options: opts, level: st.level, subject: "Matematika" };
+      },
+
+      recordAnswer(pid, isCorrect, sec) {
+        if (this.ready) {
+          const res = JSON.parse(this.pyodide.runPython(`engine.record_answer("${pid}", ${isCorrect ? "True" : "False"}, ${sec.toFixed(2)})`));
+          this.log(`Python -> record_answer(${pid}, ${isCorrect}, ${sec.toFixed(1)}s) => Skor:${res.state.score}, Lv:${res.state.level}`);
+          return res;
+        }
+        const st = this.fb[pid];
+        st.attempts++; st.total_time += sec;
+        let level_up = false, feedback = "";
+        if (isCorrect) {
+          st.correct++; st.streak++;
+          st.score += 100 * st.level + 15;
+          if (st.streak >= 2 && st.level < 3) { st.level++; level_up = true; feedback = `Hebat! Naik Level ${st.level}!`; }
+          else feedback = "Benar sekali! 🎉";
+        } else {
+          st.streak = 0; if (st.level > 1) st.level--;
+          feedback = "Belum tepat, coba lagi ya!";
+        }
+        return { state: st, accuracy: Math.round((st.correct / Math.max(1, st.attempts)) * 100), feedback, level_up };
+      },
+
+      getSummary(pid, grade, subject) {
+        if (this.ready) {
+          return JSON.parse(this.pyodide.runPython(`engine.get_summary("${pid}", "${grade}", "${subject}")`));
+        }
+        const st = this.fb[pid];
+        const acc = Math.round((st.correct / Math.max(1, st.attempts)) * 100);
+        const avg_time = Number((st.total_time / Math.max(1, st.attempts)).toFixed(1));
+        const stars = acc >= 85 ? 3 : acc >= 60 ? 2 : 1;
+        return { score: st.score, accuracy: acc, avg_time, level: st.level, stars, recommendation: `Akurasi ${acc}% (reaksi ${avg_time}d) di Level ${st.level}. Terus semangat belajar!` };
+      }
+    };
+
+    /*************************************************************************
+     * 3. WEB AUDIO API SFX & INDONESIAN WEB SPEECH API
+     *************************************************************************/
+    const AudioFX = {
+      ctx: null,
+      muted: false,
+      ensure() {
+        if (!this.ctx) {
+          const AC = window.AudioContext || window.webkitAudioContext;
+          if (AC) this.ctx = new AC();
+        }
+        if (this.ctx && this.ctx.state === 'suspended') this.ctx.resume();
+      },
+      tone(freq, type, dur, vol = 0.13, delay = 0) {
+        if (this.muted) return;
+        this.ensure();
+        if (!this.ctx) return;
+        const now = this.ctx.currentTime + delay;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = type;
+        osc.frequency.setValueAtTime(freq, now);
+        gain.gain.setValueAtTime(0.001, now);
+        gain.gain.exponentialRampToValueAtTime(vol, now + 0.015);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + dur);
+        osc.connect(gain); gain.connect(this.ctx.destination);
+        osc.start(now); osc.stop(now + dur + 0.02);
+      },
+      hover() { this.tone(520, 'sine', 0.06, 0.05); },
+      pinch() { this.tone(660, 'sine', 0.10, 0.12); this.tone(920, 'triangle', 0.08, 0.08, 0.03); },
+      release() { this.tone(410, 'sine', 0.08, 0.07); },
+      correct() {
+        [523.25, 659.25, 783.99, 1046.5].forEach((f, i) => this.tone(f, 'triangle', 0.22, 0.15, i * 0.08));
+      },
+      levelUp() {
+        [587.33, 783.99, 987.77, 1174.66].forEach((f, i) => this.tone(f, 'sine', 0.26, 0.16, i * 0.09));
+      },
+      wrong() { this.tone(230, 'sine', 0.16, 0.10, 0); this.tone(185, 'sine', 0.20, 0.09, 0.11); },
+      victory() { [523, 659, 784, 1046, 784, 1046].forEach((f, i) => this.tone(f, 'triangle', 0.22, 0.15, i * 0.1)); },
+      speak(text) {
+        if (this.muted || !('speechSynthesis' in window) || !text) return;
+        try {
+          window.speechSynthesis.cancel();
+          const u = new SpeechSynthesisUtterance(text);
+          u.lang = 'id-ID'; u.rate = 0.98; u.pitch = 1.08;
+          window.speechSynthesis.speak(u);
+        } catch (e) {}
+      }
+    };
+
+    /*************************************************************************
+     * 4. CORE APPLICATION STATE & 3 VIRTUAL WORLD THEMES
+     *************************************************************************/
+    const canvas = document.getElementById('arCanvas');
+    const ctx = canvas.getContext('2d');
+    const videoEl = document.getElementById('webcamVideo');
+
+    const MAX_QUESTIONS = 5;
+    const THEMES = {
+      space: { name: 'Luar Angkasa', icon: '🌌' },
+      ocean: { name: 'Bawah Laut', icon: '🐠' },
+      forest: { name: 'Hutan Ajaib', icon: '🧚' }
+    };
+
+    const HAND_CONNECTIONS = [
+      [0,1],[1,2],[2,3],[3,4], [0,5],[5,6],[6,7],[7,8],
+      [5,9],[9,10],[10,11],[11,12], [9,13],[13,14],[14,15],[15,16],
+      [13,17],[17,18],[18,19],[19,20], [0,17]
+    ];
+
+    const App = {
+      running: false,
+      grade: '1-2',
+      subject: 'campuran',
+      mode: 'single', // 'single' | 'split' | 'classify'
+      theme: 'space', // 'space' | 'ocean' | 'forest'
+      cameraActive: false,
+      cameraStream: null,
+      handsDetector: null,
+      handsBusy: false,
+      magnetAssist: true,
+      pinchSensitivity: 52,
+      showSkeleton: true,
+      w: window.innerWidth,
+      h: window.innerHeight,
+      t: 0,
+      players: {
+        p1: { qIndex: 0, currentQ: null, qStart: 0, done: false, score: 0, level: 1, streak: 0 },
+        p2: { qIndex: 0, currentQ: null, qStart: 0, done: false, score: 0, level: 1, streak: 0 }
+      },
+      orbs: [],
+      particles: [],
+      ripples: [],
+      floatTexts: [],
+      themeEntities: [],
+      handCursors: [],
+      rawHandLandmarks: [],
+      pointerCursors: new Map(),
+      hoverPos: { x: -999, y: -999 }
+    };
+
+    function initThemeEntities() {
+      App.themeEntities = [];
+      const count = 48;
+      for (let i = 0; i < count; i++) {
+        App.themeEntities.push({
+          x: Math.random() * App.w,
+          y: Math.random() * App.h,
+          r: 1.5 + Math.random() * 4,
+          vx: (Math.random() - 0.5) * 0.9,
+          vy: 0.3 + Math.random() * 0.8,
+          phase: Math.random() * Math.PI * 2,
+          color: ['#38bdf8', '#fde047', '#f472b6', '#34d399', '#fb923c'][i % 5]
+        });
+      }
+    }
+
+    function resize() {
+      App.w = window.innerWidth;
+      App.h = window.innerHeight;
+      canvas.width = App.w;
+      canvas.height = App.h;
+      initThemeEntities();
+    }
+    window.addEventListener('resize', resize);
+    resize();
+
+    /*************************************************************************
+     * 5. PORTALS, ORBS & VISUAL EFFECTS
+     *************************************************************************/
+    function getPortals() {
+      const w = App.w, h = App.h;
+      const r = Math.max(46, Math.min(82, Math.min(w, h) * (App.mode === 'single' ? 0.105 : 0.095)));
+      if (App.mode === 'single') {
+        return [{ id: 'p1', pid: 'p1', x: w * 0.5, y: h * 0.78, r, color: '#38bdf8', label: 'PORTAL JAWABAN' }];
+      }
+      if (App.mode === 'split') {
+        return [
+          { id: 'p1', pid: 'p1', x: w * 0.25, y: h * 0.78, r, color: '#38bdf8', label: 'PORTAL P1' },
+          { id: 'p2', pid: 'p2', x: w * 0.75, y: h * 0.78, r, color: '#fb923c', label: 'PORTAL P2' }
+        ];
+      }
+      // Mode Klasifikasi (2 Portal Kategori)
+      const q = App.players.p1.currentQ;
+      return [
+        { id: 'left', pid: 'p1', x: w * 0.24, y: h * 0.78, r, color: '#38bdf8', label: q?.left_label || 'KIRI' },
+        { id: 'right', pid: 'p1', x: w * 0.76, y: h * 0.78, r, color: '#f472b6', label: q?.right_label || 'KANAN' }
+      ];
+    }
+
+    function spawnOrbs(pid, qData) {
+      App.orbs = App.orbs.filter(o => o.pid !== pid);
+      const w = App.w, h = App.h;
+      const isSplit = App.mode === 'split';
+      const minX = isSplit ? (pid === 'p1' ? 50 : w * 0.5 + 45) : 65;
+      const maxX = isSplit ? (pid === 'p1' ? w * 0.5 - 45 : w - 50) : w - 65;
+      const spanX = Math.max(100, maxX - minX);
+      const orbR = isSplit ? Math.max(34, Math.min(48, w * 0.05)) : Math.max(44, Math.min(60, w * 0.058));
+
+      const list = qData.type === 'classify' ? qData.items : qData.options;
+      list.forEach((opt, i) => {
+        const col = i % 2;
+        const row = Math.floor(i / 2);
+        const x = minX + (col === 0 ? spanX * 0.26 : spanX * 0.74) + (Math.random() - 0.5) * 24;
+        const y = h * (row === 0 ? 0.37 : 0.55) + (Math.random() - 0.5) * 18;
+        App.orbs.push({
+          id: `${pid}_${Date.now()}_${i}`,
+          pid,
+          text: opt.text,
+          emoji: opt.emoji,
+          correct: !!opt.correct,
+          target: opt.target || null,
+          x, y,
+          vx: (Math.random() - 0.5) * 0.7,
+          vy: (Math.random() - 0.5) * 0.5,
+          r: orbR,
+          phase: Math.random() * Math.PI * 2,
+          grabbedBy: null,
+          hovered: false,
+          shake: 0,
+          scale: 0.1
+        });
+      });
+    }
+
+    function spawnParticles(x, y, color, count = 24) {
+      const palette = color ? [color, '#ffffff', '#fde047'] : ['#38bdf8', '#34d399', '#fbbf24', '#f472b6', '#ffffff'];
+      for (let i = 0; i < count; i++) {
+        const ang = Math.random() * Math.PI * 2;
+        const spd = 2 + Math.random() * 6;
+        App.particles.push({
+          x, y, vx: Math.cos(ang) * spd, vy: Math.sin(ang) * spd - 1.4,
+          size: 3 + Math.random() * 4.5, color: palette[Math.floor(Math.random() * palette.length)], alpha: 1
+        });
+      }
+    }
+
+    function spawnRipple(x, y, color = '#38bdf8') {
+      App.ripples.push({ x, y, r: 10, maxR: 75, alpha: 0.9, color });
+    }
+
+    function spawnFloatText(x, y, text, color = '#fde047') {
+      App.floatTexts.push({ x, y, text, color, alpha: 1, vy: -1.4 });
+    }
+
+    /*************************************************************************
+     * 6. GAMEPLAY LOGIC, RAPOR MINI (LOCALSTORAGE) & HUD
+     *************************************************************************/
+    let toastTimer = null;
+    function showToast(msg, ms = 2800) {
+      const el = document.getElementById('toastBanner');
+      el.textContent = msg;
+      el.style.opacity = '1';
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => { el.style.opacity = '0'; }, ms);
+    }
+
+    function loadNext(pid) {
+      const p = App.players[pid];
+      const maxQ = App.mode === 'classify' ? 3 : MAX_QUESTIONS;
+      if (p.qIndex >= maxQ) {
+        p.done = true;
+        App.orbs = App.orbs.filter(o => o.pid !== pid);
+        checkComplete();
+        return;
+      }
+      const qData = App.mode === 'classify'
+        ? PyBridge.generateClassify(pid, App.grade)
+        : PyBridge.generateQuestion(pid, App.grade, App.subject);
+      p.currentQ = qData;
+      p.qStart = performance.now();
+      p.level = qData.level;
+      spawnOrbs(pid, qData);
+      updateHud();
+      if (App.mode !== 'split') AudioFX.speak(qData.question);
+    }
+
+    function updateHud() {
+      const p1 = App.players.p1, p2 = App.players.p2;
+      const maxQ = App.mode === 'classify' ? 3 : MAX_QUESTIONS;
+      if (App.mode !== 'split') {
+        document.getElementById('s1Progress').textContent = `${App.mode === 'classify' ? 'Misi' : 'Soal'} ${Math.min(p1.qIndex + 1, maxQ)} / ${maxQ}`;
+        document.getElementById('s1ProgressBar').style.width = `${((p1.qIndex + 1) / maxQ) * 100}%`;
+        document.getElementById('s1Level').textContent = `Level ${p1.level}`;
+        document.getElementById('s1Score').textContent = `⭐ ${p1.score}`;
+        const comboEl = document.getElementById('s1Combo');
+        if (p1.streak >= 2) { comboEl.textContent = `🔥 Combo x${p1.streak}`; comboEl.classList.remove('hidden'); }
+        else comboEl.classList.add('hidden');
+        if (p1.currentQ) document.getElementById('s1Question').textContent = p1.currentQ.question;
+        document.getElementById('s1SubHint').textContent = App.mode === 'classify'
+          ? 'Cubit & pilah semua gelembung ke Portal Kiri atau Portal Kanan!'
+          : 'Cubit / seret gelembung jawaban ke dalam Portal Jawaban!';
+      } else {
+        document.getElementById('p1Progress').textContent = `${Math.min(p1.qIndex + 1, maxQ)}/${maxQ}`;
+        document.getElementById('p1Score').textContent = `⭐ ${p1.score}`;
+        document.getElementById('p1Question').textContent = p1.done ? 'Selesai! 🎉' : (p1.currentQ?.question || '');
+        document.getElementById('p2Progress').textContent = `${Math.min(p2.qIndex + 1, maxQ)}/${maxQ}`;
+        document.getElementById('p2Score').textContent = `⭐ ${p2.score}`;
+        document.getElementById('p2Question').textContent = p2.done ? 'Selesai! 🎉' : (p2.currentQ?.question || '');
+      }
+    }
+
+    function handleDrop(orb, portal) {
+      const pid = orb.pid;
+      const p = App.players[pid];
+      const sec = (performance.now() - p.qStart) / 1000;
+      const isRight = App.mode === 'classify' ? (orb.target === portal.id) : orb.correct;
+
+      const res = PyBridge.recordAnswer(pid, isRight, sec);
+      p.score = res.state.score;
+      p.level = res.state.level;
+      p.streak = res.state.streak;
+
+      if (isRight) {
+        if (res.level_up) AudioFX.levelUp(); else AudioFX.correct();
+        spawnParticles(portal.x, portal.y, null, 34);
+        spawnRipple(portal.x, portal.y, '#34d399');
+        spawnFloatText(portal.x, portal.y - 35, res.level_up ? `LEVEL ${p.level}! 🚀` : `+${100 * p.level} ⭐`, '#34d399');
+        showToast(res.feedback);
+
+        if (App.mode === 'classify') {
+          // Hapus orb yang sudah benar dipilah
+          App.orbs = App.orbs.filter(o => o.id !== orb.id);
+          p.qStart = performance.now();
+          updateHud();
+          if (App.orbs.filter(o => o.pid === pid).length === 0) {
+            p.qIndex++;
+            setTimeout(() => loadNext(pid), 700);
+          }
+        } else {
+          if (p.currentQ?.exp) showToast(`${res.feedback} — ${p.currentQ.exp}`, 3200);
+          p.qIndex++;
+          updateHud();
+          setTimeout(() => loadNext(pid), 800);
+        }
+      } else {
+        AudioFX.wrong();
+        orb.shake = 18;
+        orb.y = portal.y - portal.r - orb.r - 36;
+        orb.vy = -2.2;
+        spawnParticles(orb.x, orb.y, '#f43f5e', 12);
+        spawnFloatText(orb.x, orb.y - 25, 'Coba lagi!', '#fda4af');
+        showToast(`${res.feedback} 💡 ${p.currentQ?.hint || ''}`, 3600);
+        updateHud();
+      }
+    }
+
+    function saveRaporToStorage(entry) {
+      try {
+        const list = JSON.parse(localStorage.getItem('eduvision_pro_rapor') || '[]');
+        list.unshift(entry);
+        localStorage.setItem('eduvision_pro_rapor', JSON.stringify(list.slice(0, 12)));
+      } catch (e) {}
+    }
+
+    function renderRaporHistory() {
+      const container = document.getElementById('raporHistoryList');
+      try {
+        const list = JSON.parse(localStorage.getItem('eduvision_pro_rapor') || '[]');
+        if (!list.length) {
+          container.innerHTML = '<div class="text-slate-400 italic">Belum ada riwayat tersimpan.</div>';
+          return;
+        }
+        container.innerHTML = list.map(r => `
+          <div class="flex items-center justify-between bg-white/5 rounded-xl px-2.5 py-1.5">
+            <span><b>${r.date}</b> • Kls ${r.grade} (${r.mode})</span>
+            <span class="text-amber-300 font-bold">⭐ ${r.score} (${r.acc}%)</span>
+          </div>
+        `).join('');
+      } catch (e) {}
+    }
+
+    function checkComplete() {
+      const done = App.mode === 'split' ? (App.players.p1.done && App.players.p2.done) : App.players.p1.done;
+      if (!done) return;
+      App.running = false;
+      AudioFX.victory();
+
+      const s1 = PyBridge.getSummary('p1', App.grade, App.subject);
+      saveRaporToStorage({
+        date: new Date().toLocaleDateString('id-ID', { day: '2-digit', month: 'short' }),
+        grade: App.grade, mode: App.mode, score: s1.score, acc: s1.accuracy
+      });
+      renderRaporHistory();
+
+      const modal = document.getElementById('evalModal');
+      modal.classList.remove('hidden'); modal.classList.add('flex');
+
+      if (App.mode !== 'split') {
+        document.getElementById('evalStars').textContent = '⭐'.repeat(s1.stars) + '☆'.repeat(3 - s1.stars);
+        document.getElementById('evalTitle').textContent = s1.stars === 3 ? 'Luar Biasa! 🏆' : (s1.stars === 2 ? 'Hebat Sekali! 🎉' : 'Semangat Belajar! 💪');
+        document.getElementById('evalSubtitle').textContent = `Kelas ${App.grade} • ${App.subject.toUpperCase()} (${App.mode})`;
+        document.getElementById('evalScore').textContent = s1.score;
+        document.getElementById('evalAccuracy').textContent = `${s1.accuracy}%`;
+        document.getElementById('evalReaction').textContent = `${s1.avg_time}d`;
+        document.getElementById('evalLevel').textContent = `Lv ${s1.level}`;
+        document.getElementById('evalRecommendation').textContent = s1.recommendation;
+      } else {
+        const s2 = PyBridge.getSummary('p2', App.grade, App.subject);
+        const win = s1.score > s2.score ? '🔵 Pemain 1 Menang!' : (s2.score > s1.score ? '🟠 Pemain 2 Menang!' : '🤝 Seri Hebat!');
+        document.getElementById('evalStars').textContent = '🏆✨🏆';
+        document.getElementById('evalTitle').textContent = win;
+        document.getElementById('evalSubtitle').textContent = `P1: ${s1.score} vs P2: ${s2.score}`;
+        document.getElementById('evalScore').textContent = `${s1.score}/${s2.score}`;
+        document.getElementById('evalAccuracy').textContent = `${s1.accuracy}%/${s2.accuracy}%`;
+        document.getElementById('evalReaction').textContent = `${s1.avg_time}d`;
+        document.getElementById('evalLevel').textContent = `Lv ${Math.max(s1.level, s2.level)}`;
+        document.getElementById('evalRecommendation').textContent = `P1: ${s1.recommendation} | P2: ${s2.recommendation}`;
+      }
+    }
+
+    function startSession() {
+      document.getElementById('lobbyModal').classList.add('hidden');
+      document.getElementById('evalModal').classList.add('hidden');
+      document.getElementById('evalModal').classList.remove('flex');
+      document.getElementById('gameplayHud').classList.remove('hidden');
+      ['btnHint', 'btnReset', 'btnSpeakQ'].forEach(id => {
+        const el = document.getElementById(id);
+        el.classList.remove('hidden'); el.classList.add('flex');
+      });
+      document.getElementById('singleHud').classList.toggle('hidden', App.mode === 'split');
+      document.getElementById('splitHud').classList.toggle('hidden', App.mode !== 'split');
+
+      App.orbs = []; App.particles = []; App.ripples = []; App.floatTexts = [];
+      ['p1', 'p2'].forEach(pid => {
+        PyBridge.resetPlayer(pid);
+        App.players[pid] = { qIndex: 0, currentQ: null, qStart: 0, done: false, score: 0, level: 1, streak: 0 };
+      });
+      App.running = true;
+      loadNext('p1');
+      if (App.mode === 'split') loadNext('p2');
+    }
+
+    /*************************************************************************
+     * 7. WEBCAM & MEDIAPIPE HANDS (HOLOGRAPHIC SKELETON + PINCH)
+     *************************************************************************/
+    async function enableCamera() {
+      try {
+        if (!navigator.mediaDevices?.getUserMedia) throw new Error("No camera API");
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false
+        });
+        App.cameraStream = stream;
+        videoEl.srcObject = stream;
+        await videoEl.play();
+        videoEl.classList.add('active');
+        App.cameraActive = true;
+        document.getElementById('camIcon').textContent = '📷';
+        document.getElementById('camLabel').textContent = 'Kamera AR';
+        showToast("📷 Kamera AR Aktif! Cubit udara untuk menangkap jawaban.");
+        initMediaPipe();
+      } catch (e) {
+        disableCamera();
+        showToast("🌌 Kamera tidak tersedia — Mode Dunia Virtual 2D Aktif.", 3400);
+      }
+    }
+
+    function disableCamera() {
+      if (App.cameraStream) { App.cameraStream.getTracks().forEach(t => t.stop()); App.cameraStream = null; }
+      videoEl.classList.remove('active'); videoEl.srcObject = null;
+      App.cameraActive = false; App.handCursors = []; App.rawHandLandmarks = [];
+      document.getElementById('camIcon').textContent = '🌌';
+      document.getElementById('camLabel').textContent = 'Virtual 2D';
+    }
+
+    function initMediaPipe() {
+      if (App.handsDetector || typeof Hands === 'undefined') return;
+      try {
+        const hands = new Hands({ locateFile: f => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${f}` });
+        hands.setOptions({ maxNumHands: 2, modelComplexity: 1, minDetectionConfidence: 0.65, minTrackingConfidence: 0.6 });
+        hands.onResults(onHandsResults);
+        App.handsDetector = hands;
+        pumpVideo();
+      } catch (e) {}
+    }
+
+    async function pumpVideo() {
+      if (App.cameraActive && App.handsDetector && videoEl.readyState >= 2 && !App.handsBusy) {
+        App.handsBusy = true;
+        try { await App.handsDetector.send({ image: videoEl }); } catch (e) {}
+        App.handsBusy = false;
+      }
+      requestAnimationFrame(pumpVideo);
+    }
+
+    function onHandsResults(res) {
+      const prevMap = new Map(App.handCursors.map(c => [c.id, c]));
+      const next = [];
+      App.rawHandLandmarks = res.multiHandLandmarks || [];
+
+      App.rawHandLandmarks.forEach((lm, idx) => {
+        const thumb = lm[4], index = lm[8];
+        const mx = (1 - (thumb.x + index.x) / 2) * App.w;
+        const my = ((thumb.y + index.y) / 2) * App.h;
+        const dist = Math.hypot((thumb.x - index.x) * App.w, (thumb.y - index.y) * App.h);
+        const id = `hand_${idx}`;
+        const prev = prevMap.get(id);
+        const thresh = prev?.pinching ? App.pinchSensitivity + 14 : App.pinchSensitivity;
+        const pinching = dist < thresh;
+
+        const cursor = {
+          id, x: prev ? prev.x * 0.35 + mx * 0.65 : mx, y: prev ? prev.y * 0.35 + my * 0.65 : my,
+          pinching, grabbedOrbId: prev ? prev.grabbedOrbId : null
+        };
+        processCursor(cursor, prev?.pinching || false);
+        next.push(cursor);
+      });
+
+      prevMap.forEach((oldC, id) => {
+        if (!next.find(c => c.id === id) && oldC.grabbedOrbId) releaseOrb(oldC.grabbedOrbId);
+      });
+      App.handCursors = next;
+    }
+
+    /*************************************************************************
+     * 8. UNIFIED CURSOR INTERACTION (HAND + MOUSE + MULTI-TOUCH + MAGNET)
+     *************************************************************************/
+    function processCursor(cursor, wasPinching) {
+      if (!App.running) return;
+      const magnetBonus = App.magnetAssist ? 28 : 6;
+
+      if (cursor.pinching && !wasPinching) {
+        spawnRipple(cursor.x, cursor.y, '#38bdf8');
+        // Cari orb terdekat dalam jangkauan (dengan Magnet Assist)
+        let best = null, bestD = Infinity;
+        App.orbs.forEach(o => {
+          if (o.grabbedBy) return;
+          const d = Math.hypot(o.x - cursor.x, o.y - cursor.y);
+          if (d <= o.r + magnetBonus && d < bestD) { best = o; bestD = d; }
+        });
+        if (best) {
+          best.grabbedBy = cursor.id;
+          cursor.grabbedOrbId = best.id;
+          AudioFX.pinch();
+          spawnParticles(best.x, best.y, '#38bdf8', 10);
+        }
+      }
+
+      if (cursor.pinching && cursor.grabbedOrbId) {
+        const orb = App.orbs.find(o => o.id === cursor.grabbedOrbId);
+        if (orb) {
+          orb.x += (cursor.x - orb.x) * 0.48;
+          orb.y += (cursor.y - orb.y) * 0.48;
+          orb.vx = 0; orb.vy = 0;
+          if (Math.random() < 0.3) spawnParticles(orb.x, orb.y, '#bae6fd', 1);
+        } else {
+          cursor.grabbedOrbId = null;
+        }
+      }
+
+      if (!cursor.pinching && wasPinching && cursor.grabbedOrbId) {
+        releaseOrb(cursor.grabbedOrbId);
+        cursor.grabbedOrbId = null;
+      }
+    }
+
+    function releaseOrb(orbId) {
+      const orb = App.orbs.find(o => o.id === orbId);
+      if (!orb) return;
+      orb.grabbedBy = null;
+      const portals = getPortals().filter(pt => App.mode === 'classify' || pt.pid === orb.pid);
+      const hitPortal = portals.find(pt => Math.hypot(orb.x - pt.x, orb.y - pt.y) <= pt.r + orb.r * 0.72);
+      if (hitPortal) {
+        handleDrop(orb, hitPortal);
+      } else {
+        AudioFX.release();
+        orb.vx = (Math.random() - 0.5) * 1.0;
+        orb.vy = (Math.random() - 0.5) * 0.8;
+      }
+    }
+
+    canvas.addEventListener('pointerdown', (e) => {
+      canvas.setPointerCapture(e.pointerId);
+      const c = { id: `ptr_${e.pointerId}`, x: e.clientX, y: e.clientY, pinching: true, grabbedOrbId: null };
+      processCursor(c, false);
+      App.pointerCursors.set(e.pointerId, c);
+    });
+    canvas.addEventListener('pointermove', (e) => {
+      App.hoverPos = { x: e.clientX, y: e.clientY };
+      const c = App.pointerCursors.get(e.pointerId);
+      if (!c) return;
+      c.x = e.clientX; c.y = e.clientY;
+      processCursor(c, true);
+    });
+    function endPtr(e) {
+      const c = App.pointerCursors.get(e.pointerId);
+      if (!c) return;
+      c.pinching = false;
+      processCursor(c, true);
+      App.pointerCursors.delete(e.pointerId);
+    }
+    canvas.addEventListener('pointerup', endPtr);
+    canvas.addEventListener('pointercancel', endPtr);
+
+    /*************************************************************************
+     * 9. 60FPS SPATIAL 2D RENDERER (3 THEMES + SKELETON + ORBS + PORTALS)
+     *************************************************************************/
+    function drawVirtualTheme() {
+      const w = App.w, h = App.h;
+      const g = ctx.createLinearGradient(0, 0, w, h);
+
+      if (App.theme === 'space') {
+        g.addColorStop(0, '#090d1e'); g.addColorStop(0.5, '#1e1b4b'); g.addColorStop(1, '#0c4a6e');
+        ctx.fillStyle = g; ctx.fillRect(0, 0, w, h);
+        // Planet 2D Parallax
+        ctx.save();
+        ctx.fillStyle = 'rgba(251, 146, 60, 0.18)';
+        ctx.beginPath(); ctx.arc(w * 0.14, h * 0.24, 52, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = 'rgba(253, 224, 71, 0.28)'; ctx.lineWidth = 5;
+        ctx.beginPath(); ctx.ellipse(w * 0.14, h * 0.24, 85, 18, -0.25, 0, Math.PI * 2); ctx.stroke();
+        ctx.restore();
+        // Stars
+        App.themeEntities.forEach(s => {
+          s.y -= s.vy * 0.5; if (s.y < -5) { s.y = h + 5; s.x = Math.random() * w; }
+          ctx.fillStyle = `rgba(255,255,255,${0.35 + 0.45 * Math.sin(App.t * 2 + s.phase)})`;
+          ctx.beginPath(); ctx.arc(s.x, s.y, s.r * 0.65, 0, Math.PI * 2); ctx.fill();
+        });
+      } else if (App.theme === 'ocean') {
+        g.addColorStop(0, '#082f49'); g.addColorStop(0.5, '#0e7490'); g.addColorStop(1, '#042f2e');
+        ctx.fillStyle = g; ctx.fillRect(0, 0, w, h);
+        // Rising Bubbles & 2D Vector Fish
+        App.themeEntities.forEach((b, i) => {
+          if (i % 8 === 0) {
+            b.x += 1.1; if (b.x > w + 40) { b.x = -40; b.y = h * (0.2 + Math.random() * 0.6); }
+            ctx.save(); ctx.translate(b.x, b.y + Math.sin(App.t * 3 + b.phase) * 8);
+            ctx.fillStyle = 'rgba(253, 224, 71, 0.35)';
+            ctx.beginPath(); ctx.ellipse(0, 0, 16, 9, 0, 0, Math.PI * 2); ctx.fill();
+            ctx.beginPath(); ctx.moveTo(-14, 0); ctx.lineTo(-24, -8); ctx.lineTo(-24, 8); ctx.closePath(); ctx.fill();
+            ctx.restore();
+          } else {
+            b.y -= b.vy * 1.1; if (b.y < -10) { b.y = h + 10; b.x = Math.random() * w; }
+            ctx.strokeStyle = 'rgba(186, 230, 253, 0.35)'; ctx.lineWidth = 1.5;
+            ctx.beginPath(); ctx.arc(b.x + Math.sin(App.t + b.phase) * 6, b.y, b.r * 1.4, 0, Math.PI * 2); ctx.stroke();
+          }
+        });
+      } else {
+        // Hutan Ajaib
+        g.addColorStop(0, '#052e16'); g.addColorStop(0.55, '#064e3b'); g.addColorStop(1, '#1e1b4b');
+        ctx.fillStyle = g; ctx.fillRect(0, 0, w, h);
+        App.themeEntities.forEach((f, i) => {
+          f.x += Math.sin(App.t + f.phase) * 0.7; f.y -= f.vy * 0.4;
+          if (f.y < -10) { f.y = h + 10; f.x = Math.random() * w; }
+          ctx.fillStyle = i % 3 === 0 ? 'rgba(163, 230, 53, 0.65)' : 'rgba(253, 224, 71, 0.55)';
+          ctx.shadowColor = '#bef264'; ctx.shadowBlur = 10;
+          ctx.beginPath(); ctx.arc(f.x, f.y, f.r * 0.9, 0, Math.PI * 2); ctx.fill();
+          ctx.shadowBlur = 0;
+        });
+      }
+    }
+
+    function drawHandSkeletons() {
+      if (!App.showSkeleton || !App.rawHandLandmarks.length) return;
+      ctx.save();
+      ctx.strokeStyle = 'rgba(56, 189, 248, 0.55)';
+      ctx.lineWidth = 2;
+      App.rawHandLandmarks.forEach(lm => {
+        HAND_CONNECTIONS.forEach(([a, b]) => {
+          const ax = (1 - lm[a].x) * App.w, ay = lm[a].y * App.h;
+          const bx = (1 - lm[b].x) * App.w, by = lm[b].y * App.h;
+          ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.stroke();
+        });
+        [4, 8].forEach(idx => {
+          ctx.fillStyle = '#34d399';
+          ctx.beginPath(); ctx.arc((1 - lm[idx].x) * App.w, lm[idx].y * App.h, 5, 0, Math.PI * 2); ctx.fill();
+        });
+      });
+      ctx.restore();
+    }
+
+    function drawPortal(pt) {
+      ctx.save();
+      ctx.translate(pt.x, pt.y);
+      const pulse = 1 + Math.sin(App.t * 3.5) * 0.06;
+      const g = ctx.createRadialGradient(0, 0, pt.r * 0.2, 0, 0, pt.r * 1.28 * pulse);
+      g.addColorStop(0, pt.color + '55'); g.addColorStop(0.7, pt.color + '22'); g.addColorStop(1, 'transparent');
+      ctx.fillStyle = g;
+      ctx.beginPath(); ctx.arc(0, 0, pt.r * 1.28 * pulse, 0, Math.PI * 2); ctx.fill();
+
+      ctx.save(); ctx.rotate(App.t * 0.85);
+      ctx.strokeStyle = pt.color; ctx.lineWidth = 3.5; ctx.setLineDash([14, 10]);
+      ctx.beginPath(); ctx.arc(0, 0, pt.r, 0, Math.PI * 2); ctx.stroke();
+      ctx.restore();
+
+      ctx.fillStyle = 'rgba(15, 23, 42, 0.52)';
+      ctx.beginPath(); ctx.arc(0, 0, pt.r * 0.85, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#ffffff'; ctx.font = '700 11px Inter, sans-serif';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText('🎯', 0, -10);
+      ctx.fillText(pt.label, 0, 12);
+      ctx.restore();
+    }
+
+    function drawOrbs() {
+      const w = App.w, h = App.h, isSplit = App.mode === 'split';
+      const activePts = [...App.handCursors, App.hoverPos];
+
+      App.orbs.forEach(o => {
+        o.scale += (1 - o.scale) * 0.14;
+        if (o.shake > 0) o.shake *= 0.85;
+
+        const isHov = activePts.some(p => Math.hypot(o.x - p.x, o.y - p.y) <= o.r + 14);
+        if (isHov && !o.hovered && !o.grabbedBy) AudioFX.hover();
+        o.hovered = isHov;
+
+        if (!o.grabbedBy) {
+          o.x += o.vx; o.y += o.vy + Math.sin(App.t * 2.4 + o.phase) * 0.36;
+          const minX = isSplit ? (o.pid === 'p1' ? o.r + 12 : w * 0.5 + o.r + 12) : o.r + 16;
+          const maxX = isSplit ? (o.pid === 'p1' ? w * 0.5 - o.r - 12 : w - o.r - 12) : w - o.r - 16;
+          const minY = h * 0.25 + o.r, maxY = h * 0.86 - o.r;
+          if (o.x < minX) { o.x = minX; o.vx = Math.abs(o.vx); }
+          if (o.x > maxX) { o.x = maxX; o.vx = -Math.abs(o.vx); }
+          if (o.y < minY) { o.y = minY; o.vy = Math.abs(o.vy); }
+          if (o.y > maxY) { o.y = maxY; o.vy = -Math.abs(o.vy); }
+        }
+
+        ctx.save();
+        ctx.translate(o.x + (o.shake > 0.5 ? (Math.random() - 0.5) * o.shake : 0), o.y);
+        const mult = o.grabbedBy ? 1.14 : (o.hovered ? 1.07 : 1);
+        ctx.scale(o.scale * mult, o.scale * mult);
+
+        const accent = o.pid === 'p2' ? '#fb923c' : '#38bdf8';
+        const bg = ctx.createRadialGradient(-o.r * 0.3, -o.r * 0.3, o.r * 0.1, 0, 0, o.r);
+        bg.addColorStop(0, 'rgba(255,255,255,0.38)');
+        bg.addColorStop(0.55, o.grabbedBy ? accent + '99' : 'rgba(30, 41, 72, 0.72)');
+        bg.addColorStop(1, o.grabbedBy ? accent + 'cc' : 'rgba(15, 23, 42, 0.88)');
+
+        ctx.shadowColor = o.grabbedBy ? accent : 'rgba(0,0,0,0.45)';
+        ctx.shadowBlur = o.grabbedBy ? 28 : 14;
+        ctx.fillStyle = bg;
+        ctx.beginPath(); ctx.arc(0, 0, o.r, 0, Math.PI * 2); ctx.fill();
+        ctx.shadowBlur = 0;
+        ctx.strokeStyle = o.grabbedBy || o.hovered ? '#ffffff' : 'rgba(255,255,255,0.45)';
+        ctx.lineWidth = o.grabbedBy ? 3.5 : 2;
+        ctx.stroke();
+
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.font = `${Math.round(o.r * 0.54)}px sans-serif`;
+        ctx.fillText(o.emoji, 0, -o.r * 0.24);
+        ctx.fillStyle = '#ffffff';
+        const fs = o.text.length > 8 ? Math.round(o.r * 0.25) : Math.round(o.r * 0.34);
+        ctx.font = `700 ${fs}px Fredoka, Inter, sans-serif`;
+        ctx.fillText(o.text, 0, o.r * 0.34);
+        ctx.restore();
+      });
+    }
+
+    function drawEffectsAndCursors() {
+      // Ripples
+      for (let i = App.ripples.length - 1; i >= 0; i--) {
+        const rp = App.ripples[i];
+        rp.r += 3.2; rp.alpha -= 0.035;
+        if (rp.alpha <= 0) { App.ripples.splice(i, 1); continue; }
+        ctx.save(); ctx.globalAlpha = rp.alpha; ctx.strokeStyle = rp.color; ctx.lineWidth = 2.5;
+        ctx.beginPath(); ctx.arc(rp.x, rp.y, rp.r, 0, Math.PI * 2); ctx.stroke(); ctx.restore();
+      }
+      // Particles
+      for (let i = App.particles.length - 1; i >= 0; i--) {
+        const p = App.particles[i];
+        p.x += p.vx; p.y += p.vy; p.vy += 0.14; p.alpha -= 0.025;
+        if (p.alpha <= 0) { App.particles.splice(i, 1); continue; }
+        ctx.save(); ctx.globalAlpha = p.alpha; ctx.fillStyle = p.color;
+        ctx.beginPath(); ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+      }
+      // Floating Texts
+      for (let i = App.floatTexts.length - 1; i >= 0; i--) {
+        const ft = App.floatTexts[i];
+        ft.y += ft.vy; ft.alpha -= 0.018;
+        if (ft.alpha <= 0) { App.floatTexts.splice(i, 1); continue; }
+        ctx.save(); ctx.globalAlpha = ft.alpha; ctx.fillStyle = ft.color;
+        ctx.font = '700 20px Fredoka, sans-serif'; ctx.textAlign = 'center';
+        ctx.fillText(ft.text, ft.x, ft.y); ctx.restore();
+      }
+      // Cursors
+      [...App.handCursors, ...App.pointerCursors.values()].forEach(c => {
+        ctx.save(); ctx.translate(c.x, c.y);
+        const r = c.pinching ? 15 : 24;
+        ctx.strokeStyle = c.pinching ? '#34d399' : '#38bdf8';
+        ctx.lineWidth = c.pinching ? 4 : 2.5;
+        ctx.shadowColor = ctx.strokeStyle; ctx.shadowBlur = 14;
+        ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.stroke();
+        ctx.fillStyle = c.pinching ? 'rgba(52,211,153,0.4)' : 'rgba(56,189,248,0.18)';
+        ctx.fill(); ctx.restore();
+      });
+    }
+
+    function loop() {
+      App.t += 0.016;
+      ctx.clearRect(0, 0, App.w, App.h);
+      if (!App.cameraActive) drawVirtualTheme();
+      drawHandSkeletons();
+      if (App.running) {
+        if (App.mode === 'split') {
+          ctx.save(); ctx.strokeStyle = 'rgba(255,255,255,0.45)'; ctx.lineWidth = 3; ctx.setLineDash([12, 10]);
+          ctx.beginPath(); ctx.moveTo(App.w * 0.5, 0); ctx.lineTo(App.w * 0.5, App.h); ctx.stroke(); ctx.restore();
+        }
+        getPortals().forEach(drawPortal);
+        drawOrbs();
+      }
+      drawEffectsAndCursors();
+      requestAnimationFrame(loop);
+    }
+
+    /*************************************************************************
+     * 10. UI BINDINGS & INITIALIZATION
+     *************************************************************************/
+    function bindGroup(sel, attr, key, cb) {
+      document.querySelectorAll(sel).forEach(btn => {
+        btn.addEventListener('click', () => {
+          AudioFX.pinch();
+          App[key] = btn.getAttribute(attr);
+          document.querySelectorAll(sel).forEach(b => {
+            b.classList.remove('border-sky-400', 'bg-sky-500/30');
+            b.classList.add('border-white/20', 'bg-white/10');
+          });
+          btn.classList.remove('border-white/20', 'bg-white/10');
+          btn.classList.add('border-sky-400', 'bg-sky-500/30');
+          if (cb) cb(App[key]);
+        });
+      });
+    }
+
+    function syncThemeUI() {
+      const th = THEMES[App.theme];
+      document.getElementById('themeIcon').textContent = th.icon;
+      document.getElementById('themeLabel').textContent = th.name;
+    }
+
+    bindGroup('.grade-btn', 'data-grade', 'grade');
+    bindGroup('.subject-btn', 'data-subject', 'subject');
+    bindGroup('.mode-btn', 'data-mode', 'mode');
+    bindGroup('.theme-btn', 'data-theme', 'theme', syncThemeUI);
+
+    document.getElementById('btnCycleTheme').addEventListener('click', () => {
+      const keys = Object.keys(THEMES);
+      App.theme = keys[(keys.indexOf(App.theme) + 1) % keys.length];
+      syncThemeUI();
+      AudioFX.pinch();
+      showToast(`${THEMES[App.theme].icon} Dunia Tema: ${THEMES[App.theme].name}`);
+    });
+
+    document.getElementById('btnStartCamera').addEventListener('click', async () => { AudioFX.ensure(); startSession(); await enableCamera(); });
+    document.getElementById('btnStartVirtual').addEventListener('click', () => { AudioFX.ensure(); disableCamera(); startSession(); showToast(`${THEMES[App.theme].icon} Dunia Virtual 2D Aktif!`); });
+    document.getElementById('btnToggleCamera').addEventListener('click', () => App.cameraActive ? (disableCamera(), showToast("🌌 Beralih ke Dunia Virtual 2D.")) : enableCamera());
+
+    document.getElementById('btnSound').addEventListener('click', () => {
+      AudioFX.muted = !AudioFX.muted;
+      document.getElementById('soundIcon').textContent = AudioFX.muted ? '🔇' : '🔊';
+      if (AudioFX.muted && 'speechSynthesis' in window) window.speechSynthesis.cancel();
+      showToast(AudioFX.muted ? '🔇 Suara dimatikan' : '🔊 Suara & Pembaca aktif');
+    });
+
+    document.getElementById('btnSpeakQ').addEventListener('click', () => {
+      const q = App.players.p1.currentQ?.question;
+      if (q) AudioFX.speak(q);
+    });
+
+    document.getElementById('btnHint').addEventListener('click', () => {
+      const hint = App.players.p1.currentQ?.hint;
+      if (hint) { AudioFX.pinch(); showToast(`💡 Petunjuk: ${hint}`, 4200); AudioFX.speak(`Petunjuk. ${hint}`); }
+    });
+
+    document.getElementById('btnReset').addEventListener('click', () => { AudioFX.pinch(); startSession(); showToast('🔄 Ronde diulang!'); });
+    document.getElementById('btnMenu').addEventListener('click', () => {
+      App.running = false;
+      document.getElementById('lobbyModal').classList.remove('hidden');
+      document.getElementById('gameplayHud').classList.add('hidden');
+      ['btnHint', 'btnReset', 'btnSpeakQ'].forEach(id => { document.getElementById(id).classList.add('hidden'); document.getElementById(id).classList.remove('flex'); });
+    });
+
+    // Settings Modal
+    document.getElementById('btnSettings').addEventListener('click', () => { document.getElementById('settingsModal').classList.remove('hidden'); document.getElementById('settingsModal').classList.add('flex'); });
+    document.getElementById('btnCloseSettings').addEventListener('click', () => { document.getElementById('settingsModal').classList.add('hidden'); document.getElementById('settingsModal').classList.remove('flex'); });
+    document.getElementById('btnToggleMagnet').addEventListener('click', (e) => {
+      App.magnetAssist = !App.magnetAssist;
+      e.target.textContent = App.magnetAssist ? 'AKTIF' : 'NONAKTIF';
+      e.target.className = `px-3.5 py-1.5 rounded-full text-xs font-bold text-white ${App.magnetAssist ? 'bg-emerald-500' : 'bg-slate-600'}`;
+      document.getElementById('magnetBadge').textContent = App.magnetAssist ? 'Aktif' : 'Mati';
+    });
+    document.getElementById('btnToggleSkeleton').addEventListener('click', (e) => {
+      App.showSkeleton = !App.showSkeleton;
+      e.target.textContent = App.showSkeleton ? 'AKTIF' : 'NONAKTIF';
+      e.target.className = `px-3.5 py-1.5 rounded-full text-xs font-bold text-white ${App.showSkeleton ? 'bg-emerald-500' : 'bg-slate-600'}`;
+    });
+    document.getElementById('pinchSlider').addEventListener('input', (e) => {
+      App.pinchSensitivity = Number(e.target.value);
+      const lbl = App.pinchSensitivity < 44 ? 'Ketat' : (App.pinchSensitivity > 66 ? 'Mudah' : 'Normal');
+      document.getElementById('pinchValLabel').textContent = `${lbl} (${App.pinchSensitivity}px)`;
+    });
+
+    // Rapor & Python Modals
+    document.getElementById('btnRaporTop').addEventListener('click', () => { renderRaporHistory(); document.getElementById('evalModal').classList.remove('hidden'); document.getElementById('evalModal').classList.add('flex'); });
+    document.getElementById('btnCloseEval').addEventListener('click', () => { document.getElementById('evalModal').classList.add('hidden'); document.getElementById('evalModal').classList.remove('flex'); });
+    document.getElementById('btnClearHistory').addEventListener('click', () => { localStorage.removeItem('eduvision_pro_rapor'); renderRaporHistory(); showToast('🗑️ Riwayat Rapor dihapus.'); });
+    document.getElementById('btnPlayAgain').addEventListener('click', () => { AudioFX.pinch(); startSession(); });
+    document.getElementById('btnBackLobby').addEventListener('click', () => { document.getElementById('evalModal').classList.add('hidden'); document.getElementById('evalModal').classList.remove('flex'); document.getElementById('lobbyModal').classList.remove('hidden'); document.getElementById('gameplayHud').classList.add('hidden'); });
+    document.getElementById('btnPythonModal').addEventListener('click', () => { document.getElementById('pythonModal').classList.remove('hidden'); document.getElementById('pythonModal').classList.add('flex'); });
+    document.getElementById('btnClosePython').addEventListener('click', () => { document.getElementById('pythonModal').classList.add('hidden'); document.getElementById('pythonModal').classList.remove('flex'); });
+
+    // Boot
+    window.addEventListener('load', () => {
+      PyBridge.init();
+      renderRaporHistory();
+      loop();
+    });
+  </script>
+</body>
+</html>
