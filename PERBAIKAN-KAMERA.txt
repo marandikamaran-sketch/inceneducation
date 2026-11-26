@@ -1,0 +1,78 @@
+PERBAIKAN OPSIONAL: HENTIKAN LOOP KAMERA SAAT KAMERA DIMATIKAN
+
+Pada kode awal, pumpVideo() terus meminta animation frame meskipun kamera sudah dimatikan. Ganti blok initMediaPipe() dan pumpVideo() yang lama dengan blok berikut.
+
+let handPumpRunning = false;
+
+function initMediaPipe() {
+  if (typeof Hands === 'undefined') {
+    showToast('MediaPipe belum termuat. Gunakan mouse/sentuh atau muat ulang halaman.');
+    return;
+  }
+
+  if (!App.handsDetector) {
+    try {
+      const hands = new Hands({
+        locateFile: f => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${f}`
+      });
+      hands.setOptions({
+        maxNumHands: 2,
+        modelComplexity: 1,
+        minDetectionConfidence: 0.65,
+        minTrackingConfidence: 0.6
+      });
+      hands.onResults(onHandsResults);
+      App.handsDetector = hands;
+    } catch (err) {
+      showToast('MediaPipe gagal diinisialisasi. Mouse/sentuh tetap bisa digunakan.');
+      return;
+    }
+  }
+
+  // Panggil juga ketika kamera dinyalakan kembali setelah pernah dimatikan.
+  if (!handPumpRunning) {
+    handPumpRunning = true;
+    requestAnimationFrame(pumpVideo);
+  }
+}
+
+async function pumpVideo() {
+  // Berhenti total ketika kamera mati; akan dimulai lagi oleh initMediaPipe().
+  if (!App.cameraActive) {
+    handPumpRunning = false;
+    return;
+  }
+
+  if (App.handsDetector && videoEl.readyState >= 2 && !App.handsBusy) {
+    App.handsBusy = true;
+    try {
+      await App.handsDetector.send({ image: videoEl });
+    } catch (err) {
+      // Kegagalan satu frame tidak menghentikan aplikasi.
+    } finally {
+      App.handsBusy = false;
+    }
+  }
+
+  requestAnimationFrame(pumpVideo);
+}
+
+
+PERBAIKAN OPSIONAL: MATIKAN KAMERA SAAT KEMBALI KE MENU
+
+Pada event click btnMenu, tambahkan disableCamera(); sebelum atau sesudah App.running = false.
+
+Contoh:
+
+document.getElementById('btnMenu').addEventListener('click', () => {
+  App.running = false;
+  disableCamera();
+  document.getElementById('lobbyModal').classList.remove('hidden');
+  document.getElementById('gameplayHud').classList.add('hidden');
+  ['btnHint', 'btnReset', 'btnSpeakQ'].forEach(id => {
+    document.getElementById(id).classList.add('hidden');
+    document.getElementById(id).classList.remove('flex');
+  });
+});
+
+Pada event click btnBackLobby, tambahkan disableCamera(); juga agar kamera berhenti ketika pengguna kembali ke menu dari rapor.

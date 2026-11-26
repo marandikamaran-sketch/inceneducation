@@ -1,66 +1,54 @@
-# 🥽 EduVision AR Pro — Media Pembelajaran Interaktif SD (Kelas 1–6)
+# EduVision AR Pro — Panduan Deploy GitHub Pages & Vercel
 
-**EduVision AR Pro** adalah aplikasi web media pembelajaran interaktif bergaya **Apple VisionOS** untuk siswa Sekolah Dasar (Kelas 1–6). Anak dapat masuk ke dalam layar melalui kamera AR (*mirrored*) atau dunia virtual 2D, lalu **mencubit, memegang, dan memindahkan objek jawaban** dari jarak jauh menggunakan gerakan tangan (MediaPipe Hands) maupun mouse/layar sentuh.
+Proyek pada kode yang diberikan adalah situs statis (HTML, CSS, dan JavaScript di browser). Tidak memerlukan Node.js, database, server API, atau proses build.
 
-## ✨ Fitur Utama
-- **Kamera AR & 3 Dunia Virtual 2D**: Latar webcam *mirrored* layar penuh dengan transisi mulus ke dunia virtual **Luar Angkasa**, **Bawah Laut**, dan **Hutan Ajaib** (otomatis aktif jika kamera tidak tersedia).
-- **Pelacakan Tangan Holografik (Pinch-to-Grab)**: Menggunakan **MediaPipe Hands** untuk mendeteksi hingga 2 tangan secara bersamaan, lengkap dengan kerangka tangan tipis VisionOS, efek riak energi saat mencubit, fitur **Magnet Assist**, dan pengaturan sensitivitas cubitan.
-- **3 Mode Permainan**:
-  1. **Single-Screen**: Belajar mandiri dengan 1 Portal Jawaban.
-  2. **Split-Screen Duel**: 2 anak bermain berdampingan di depan 1 kamera (Pemain 1 vs Pemain 2).
-  3. **Mode Klasifikasi**: Memilah objek melayang ke Portal Kategori Kiri vs Portal Kategori Kanan.
-- **Mesin Adaptif Python (Pyodide)**: Menjalankan `python/adaptive_engine.py` langsung di browser melalui WebAssembly untuk membangkitkan soal kurikulum SD Kelas 1–6 (Matematika, IPA, Bahasa Inggris, Campuran) dengan **Dynamic Difficulty Adjustment (DDA)**.
-- **Audio & Aksesibilitas**: Efek suara Web Audio API + pembaca soal otomatis Bahasa Indonesia (`SpeechSynthesis`).
-- **Rapor Mini & Inspektor Python**: Rekap nilai tersimpan otomatis di `localStorage`, dilengkapi panel inspeksi kode & log Python secara langsung.
+## Struktur folder
 
-## 📁 Struktur Folder
+Simpan seluruh kode HTML EduVision yang diberikan sebagai `index.html`, lalu susun folder seperti ini:
+
 ```text
 eduvision-ar-pro/
-├── index.html                 # Struktur utama aplikasi & HUD VisionOS
-├── vercel.json                # Konfigurasi deployment Vercel (Permissions-Policy kamera)
-├── package.json               # Metadata proyek & script server lokal
-├── .gitignore                 # Daftar file yang diabaikan Git
-├── README.md                  # Dokumentasi proyek
-├── css/
-│   ├── variables.css          # Token warna, glassmorphism, dan tipografi
-│   ├── style.css              # Tata letak responsif mobile-first & panel HUD
-│   └── animations.css         # Animasi transisi, pulse, dan umpan balik visual
-├── js/
-│   ├── main.js                # Orkestrator aplikasi, state, dan game loop
-│   ├── camera-hands.js        # Webcam AR, MediaPipe Hands, & Pointer Events
-│   ├── canvas-engine.js       # Mesin visualisasi 2D, dunia virtual, fisika objek & partikel
-│   ├── audio-engine.js        # Synthesizer efek suara & narator Bahasa Indonesia
-│   ├── python-bridge.js       # Jembatan Pyodide (WebAssembly) + fallback otomatis
-│   └── storage.js             # Penyimpanan skor, Rapor Mini, & pengaturan
-└── python/
-    └── adaptive_engine.py     # Algoritma kurikulum SD 1-6 & Dynamic Difficulty Adjustment
+├── index.html       # seluruh HTML/CSS/JavaScript aplikasi
+├── .nojekyll        # file kosong untuk GitHub Pages
+└── README.md
 ```
 
-## 🚀 Cara Menjalankan di Komputer Lokal
-Karena aplikasi menggunakan ES Modules (`type="module"`) dan `fetch()` untuk memuat skrip Python, jalankan melalui web server lokal (jangan buka langsung dengan klik ganda `file://`):
+Penting: nama file harus tepat `index.html` dan berada di folder paling atas (root), bukan di dalam folder `src`, `public`, atau folder lain.
 
-**Opsi 1 — Menggunakan Node.js:**
-```bash
-npm run dev
-```
-Lalu buka `http://localhost:3000`.
+## Deploy ke GitHub Pages
 
-**Opsi 2 — Menggunakan Python:**
-```bash
-python -m http.server 3000
-```
-Lalu buka `http://localhost:3000`.
+1. Buat repositori GitHub baru. Untuk GitHub Free, gunakan repositori Public.
+2. Unggah `index.html`, `.nojekyll`, dan `README.md` ke root repositori.
+3. Buka **Settings → Pages**.
+4. Pada **Build and deployment**, pilih **Deploy from a branch**.
+5. Pilih branch `main` dan folder `/(root)`, kemudian klik **Save**.
+6. Tunggu workflow Pages selesai, lalu buka alamat situs yang ditampilkan di halaman Pages.
 
-## 🌐 Cara Deploy ke GitHub & Vercel
-1. Buat repositori baru di [GitHub](https://github.com/new) (misalnya `eduvision-ar-pro`).
-2. Ekstrak seluruh isi folder `eduvision-ar-pro` dan unggah (push) ke repositori GitHub tersebut:
-   ```bash
-   git init
-   git add .
-   git commit -m "Initial commit: EduVision AR Pro"
-   git branch -M main
-   git remote add origin https://github.com/USERNAME/eduvision-ar-pro.git
-   git push -u origin main
-   ```
-3. Buka [Vercel](https://vercel.com), klik **Add New Project**, pilih repositori `eduvision-ar-pro`, lalu klik **Deploy**.
-4. Tidak perlu konfigurasi *Build Command* khusus karena 100% statis. Vercel otomatis menyediakan **HTTPS**, sehingga kamera AR dan pelacakan tangan MediaPipe langsung berjalan di laptop, tablet, maupun ponsel!
+Setiap kali `index.html` diperbarui dan di-push ke branch `main`, GitHub Pages akan menerbitkan pembaruan.
+
+## Deploy ke Vercel
+
+1. Masuk ke Vercel dan pilih **Add New → Project**.
+2. Impor repositori GitHub yang berisi `index.html`.
+3. Pada pengaturan proyek, pilih **Framework Preset: Other**.
+4. Biarkan **Build Command** kosong.
+5. Biarkan **Install Command** kosong.
+6. Isi **Output Directory** dengan `.` (titik) bila diminta; jika Vercel sudah mengenali root secara otomatis, biarkan nilai default yang sesuai.
+7. Klik **Deploy**.
+
+Setelah repositori tersambung, commit baru ke branch produksi yang dipilih akan memicu deployment baru.
+
+## Catatan penting untuk fitur kamera
+
+- Akses kamera browser membutuhkan secure context (HTTPS, atau localhost saat pengembangan). Alamat GitHub Pages dan Vercel menggunakan HTTPS.
+- Saat pertama kali menjalankan mode Kamera AR, izinkan akses kamera pada browser.
+- Aplikasi memuat Tailwind CSS, Google Fonts, MediaPipe Hands, dan Pyodide dari CDN. Perangkat harus terhubung ke internet agar semua pustaka tersebut dapat dimuat.
+- Jika kamera tidak tersedia atau izin ditolak, gunakan tombol **Mulai Dunia Virtual 2D**. Interaksi mouse dan layar sentuh tetap dapat digunakan.
+- GitHub Pages dan Vercel hanya menayangkan file situs. Riwayat rapor pada kode awal disimpan di `localStorage` browser/perangkat, bukan disinkronkan ke akun guru atau perangkat lain.
+
+## Jangan lakukan ini
+
+- Jangan mengganti nama `index.html` menjadi `home.html`.
+- Jangan meletakkan file utama hanya di folder `src`.
+- Jangan mengisi Build Command dengan `npm run build` karena proyek ini tidak memiliki proses build.
+- Jangan menambahkan `package.json` atau framework baru hanya untuk menayangkan HTML ini.
